@@ -1,10 +1,9 @@
-    //
-    //  BoringViewModel.swift
-    //  boringNotch
-    //
-    //  Created by Harsh Vardhan  Goswami  on 04/08/24.
-    //
-
+//
+//  BoringViewModel.swift
+//  boringNotch
+//
+//  Created by Harsh Vardhan  Goswami  on 04/08/24.
+//
 
 import Cocoa
 import SwiftUI
@@ -39,13 +38,13 @@ class BatteryStatusViewModel: ObservableObject {
                    let currentCapacity = info[kIOPSCurrentCapacityKey] as? Int,
                    let maxCapacity = info[kIOPSMaxCapacityKey] as? Int,
                    let isCharging = info["Is Charging"] as? Bool {
-                    if(Defaults[.chargingInfoAllowed]) {
+                    if Defaults[.chargingInfoAllowed] {
 
                         withAnimation {
                             self.batteryPercentage = Float((currentCapacity * 100) / maxCapacity)
                         }
 
-                        if (isCharging && !self.isPluggedIn) {
+                        if isCharging && !self.isPluggedIn {
                             DispatchQueue.main.asyncAfter(deadline: .now() + (vm.firstLaunch ? 6 : 0)) {
                                 self.vm.toggleExpandingView(status: true, type: .battery)
                                 self.showChargingInfo = true

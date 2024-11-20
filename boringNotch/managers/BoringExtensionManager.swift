@@ -45,11 +45,9 @@ class BoringExtensionManager: ObservableObject {
 
     @objc func checkIfExtensionsAreInstalled() {
         installedExtensions = []
-        for extensionName in extensions {
-            if NSWorkspace.shared.urlForApplication(withBundleIdentifier: extensionName) != nil {
-                let ext = Extension(name: extensionName.components(separatedBy: ".").last ?? extensionName, bundleIdentifier: extensionName)
-                installedExtensions.append(ext)
-            }
+        for extensionName in extensions where NSWorkspace.shared.urlForApplication(withBundleIdentifier: extensionName) != nil {
+            let ext = Extension(name: extensionName.components(separatedBy: ".").last ?? extensionName, bundleIdentifier: extensionName)
+            installedExtensions.append(ext)
         }
     }
 }

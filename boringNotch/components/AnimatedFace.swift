@@ -8,8 +8,8 @@ import SwiftUI
 
 struct MinimalFaceFeatures: View {
     @State private var isBlinking = false
-    @State var height:CGFloat = 20;
-    @State var width:CGFloat = 30;
+    @State var height: CGFloat = 20
+    @State var width: CGFloat = 30
     
     var body: some View {
         VStack(spacing: 4) { // Adjusted spacing to fit within 30x30

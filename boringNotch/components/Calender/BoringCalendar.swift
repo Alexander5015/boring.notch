@@ -33,16 +33,16 @@ struct WheelPicker: View {
                 let totalSteps = config.steps * (config.past + config.future)
                 let spacerNum = config.offset
                 ForEach(0..<totalSteps + 2 * spacerNum + 1, id: \.self) { index in
-                    if(index < spacerNum || index > totalSteps + spacerNum - 1){
+                    if index < spacerNum || index > totalSteps + spacerNum - 1 {
                         Spacer().frame(width: 24, height: 24).id(index)
                     } else {
                         let offset = -config.offset - config.past
                         let date = dateForIndex(index, offset: offset)
                         let isSelected = isDateSelected(index, offset: offset)
-                        dateButton(date: date, isSelected: isSelected, offset: offset){
+                        dateButton(date: date, isSelected: isSelected, offset: offset) {
                             selectedDate = date
                             byClick = true
-                            withAnimation{
+                            withAnimation {
                                 scrollPosition = indexForDate(date, offset: offset) - config.offset
                             }
                             haptics.toggle()
@@ -57,10 +57,10 @@ struct WheelPicker: View {
         .scrollPosition(id: $scrollPosition, anchor: .leading)
         .safeAreaPadding(.horizontal)
         .sensoryFeedback(.alignment, trigger: haptics)
-        .onChange(of: scrollPosition) { oldValue, newValue in
-            if(!byClick){
-                handleScrollChange(newValue: newValue, config: config)
-            }else{
+        .onChange(of: scrollPosition) {
+            if !byClick {
+                handleScrollChange(newValue: scrollPosition, config: config)
+            } else {
                 byClick = false
             }
         }
@@ -69,7 +69,7 @@ struct WheelPicker: View {
         }
     }
     
-    private func dateButton(date: Date, isSelected: Bool, offset: Int, onClick:@escaping()->Void) -> some View {
+    private func dateButton(date: Date, isSelected: Bool, offset: Int, onClick: @escaping () -> Void) -> some View {
         Button(action: onClick) {
             VStack(spacing: 2) {
                 dayText(date: dateToString(for: date), isSelected: isSelected)
@@ -104,7 +104,7 @@ struct WheelPicker: View {
         let todayIndex = indexForDate(Date(), offset: offset)
         guard let newIndex = newValue else { return }
         let targetDateIndex = newIndex + config.offset
-        switch targetDateIndex{
+        switch targetDateIndex {
         case todayIndex-config.past..<todayIndex+config.future:
             selectedDate = dateForIndex(targetDateIndex, offset: offset)
             haptics.toggle()
@@ -218,8 +218,7 @@ struct EventListView: View {
                     ForEach(events.indices, id: \.self) { index in
                         VStack(alignment: .trailing) {
                             if isAllDayEvent(
-                                start: events[index].startDate, end: events[index].endDate)
-                            {
+                                start: events[index].startDate, end: events[index].endDate) {
                                 Text("All-day")
                             } else {
                                 Text("\(events[index].startDate, style: .time)")

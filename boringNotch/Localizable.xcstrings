@@ -333,9 +333,6 @@
     "Error" : {
 
     },
-    "ERROR: VIEW NOT DEFINED" : {
-
-    },
     "Exclude apps" : {
       "localizations" : {
         "en" : {
@@ -773,6 +770,9 @@
 
     },
     "TheBoringNotch" : {
+
+    },
+    "Toggle Notch Open:" : {
 
     },
     "Toggle Sneak Peek:" : {

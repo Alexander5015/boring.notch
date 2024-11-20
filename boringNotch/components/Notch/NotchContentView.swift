@@ -1,9 +1,9 @@
-    //
-    //  NotchContentView.swift
-    //  boringNotch
-    //
-    //  Created by Richard Kunkli on 13/08/2024.
-    //
+//
+//  NotchContentView.swift
+//  boringNotch
+//
+//  Created by Richard Kunkli on 13/08/2024.
+//
 
 import SwiftUI
 import Defaults
@@ -32,12 +32,11 @@ struct NotchContentView: View {
             if !vm.firstLaunch {
                 HStack(spacing: 14) {
                     if vm.notchState == .closed && vm.expandingView.show {
-                        if(vm.expandingView.type == .battery){
+                        if vm.expandingView.type == .battery {
                             Text("Charging").foregroundStyle(.white).padding(.leading, 4)
-                        }
-                        else {
+                        } else {
                             if vm.expandingView.browser == .safari {
-                                AppIcon(for: "com.apple.safari")
+                                appIcon(for: "com.apple.safari")
                             } else {
                                 Image(.chrome).resizable().scaledToFit().frame(width: 30, height: 30)
                             }
@@ -45,8 +44,8 @@ struct NotchContentView: View {
                         }
                     }
                     if !vm.expandingView.show {
-                        if(vm.notchState == .closed || vm.currentView == .home){
-                            HStack (spacing: 6){
+                        if vm.notchState == .closed || vm.currentView == .home {
+                            HStack(spacing: 6) {
                                 ZStack {
                                     Image(nsImage: musicManager.albumArt)
                                         .resizable()
@@ -58,8 +57,8 @@ struct NotchContentView: View {
                                         .cornerRadius(vm.notchState == .open ? vm.musicPlayerSizes.image.cornerRadius.opened.inset! : vm.musicPlayerSizes.image.cornerRadius.closed.inset!)
                                         .scaledToFit()
                                         .padding(.leading, vm.notchState == .open ? 0 : 3)
-                                    if vm.notchState == .open  {
-                                        AppIcon(for: musicManager.bundleIdentifier ?? "com.apple.music")
+                                    if vm.notchState == .open {
+                                        appIcon(for: musicManager.bundleIdentifier ?? "com.apple.music")
                                             .resizable()
                                             .aspectRatio(contentMode: .fill)
                                             .frame(width: vm.notchState == .open ? 30 : 10, height: vm.notchState == .open ? 30 : 10)
@@ -78,16 +77,8 @@ struct NotchContentView: View {
                                 
                             case .shelf:
                                 NotchShelfView()
-                                
-                            default:
-                                Text("ERROR: VIEW NOT DEFINED")
                             }
-                            
-                            
                         }
-                        
-                        
-
                         
                         if  vm.notchState != .open {
                             Spacer()
@@ -97,8 +88,7 @@ struct NotchContentView: View {
                             MinimalFaceFeatures().transition(.blurReplace.animation(.spring(.bouncy(duration: 0.3))))
                         }
                         
-                        
-                        if vm.notchState == .closed && vm.expandingView.show  {
+                        if vm.notchState == .closed && vm.expandingView.show {
                             if vm.expandingView.type == .battery {
                                 BoringBatteryView(batteryPercentage: batteryModel.batteryPercentage, isPluggedIn: batteryModel.isPluggedIn, batteryWidth: 30, isInLowPowerMode: batteryModel.isInLowPowerMode)
                             } else {
@@ -131,6 +121,5 @@ struct NotchContentView: View {
             // Return the appropriate width based on the notch state
         return vm.notchState == .open ? vm.musicPlayerSizes.player.size.opened.width! + 30 : dynamicWidth + (vm.sneakPeek.show ? -12 : 0)
     }
-
 
 }

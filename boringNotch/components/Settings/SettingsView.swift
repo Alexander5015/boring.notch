@@ -113,7 +113,7 @@ struct GeneralSettings: View {
                             withAnimation {
                                 Defaults[.accentColor] = color
                             }
-                        }) {
+                        }, label: {
                             Circle()
                                 .fill(color)
                                 .frame(width: 20, height: 20)
@@ -127,7 +127,7 @@ struct GeneralSettings: View {
                                                 .opacity(Defaults[.accentColor] == color ? 1 : 0)
                                         }
                                 )
-                        }
+                        })
                         .buttonStyle(PlainButtonStyle())
                     }
                     Spacer()
@@ -146,7 +146,7 @@ struct GeneralSettings: View {
                         Text(screen)
                     }
                 }
-                .onChange(of: NSScreen.screens) { old, new in
+                .onChange(of: NSScreen.screens) { _, new in
                     screens = new.compactMap({$0.localizedName})
                 }
             } header: {
@@ -162,9 +162,7 @@ struct GeneralSettings: View {
                     Text("Custom height")
                         .tag(NonNotchHeightMode.custom)
                 }
-                .onChange(of: nonNotchHeightMode) {
-                    _,
-                    new in
+                .onChange(of: nonNotchHeightMode) {_, new in
                     switch new {
                         case .matchMenuBar:
                             nonNotchHeight = 24
@@ -179,7 +177,7 @@ struct GeneralSettings: View {
                     Slider(value: $nonNotchHeight, in: 10...40, step: 1) {
                         Text("Custom notch size - \(nonNotchHeight, specifier: "%.0f")")
                     }
-                    .onChange(of: nonNotchHeight) { _, new in
+                    .onChange(of: nonNotchHeight) { _, _ in
                         NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
                     }
                 }
@@ -187,7 +185,7 @@ struct GeneralSettings: View {
                 Text("Non-notch displays")
             }
             
-            NotchBehaviour()
+            notchBehaviour()
             
             gestureControls()
         }
@@ -233,7 +231,7 @@ struct GeneralSettings: View {
     }
     
     @ViewBuilder
-    func NotchBehaviour() -> some View {
+    func notchBehaviour() -> some View {
         Section {
             Defaults.Toggle("Enable haptics", key: .enableHaptics)
             Defaults.Toggle("Open notch on hover", key: .openNotchOnHover)
@@ -337,7 +335,7 @@ struct Downloads: View {
                     }
                 }
             } header: {
-                HStack (spacing: 4){
+                HStack(spacing: 4) {
                     Text("Exclude apps")
                     comingSoonTag()
                 }
@@ -450,7 +448,7 @@ struct About: View {
                     HStack {
                         Text("Version")
                         Spacer()
-                        if (showBuildNumber) {
+                        if showBuildNumber {
                             Text("(\(Bundle.main.buildVersionNumber ?? ""))")
                                 .foregroundStyle(.secondary)
                         }
@@ -549,7 +547,7 @@ struct Extensions: View {
                     ForEach(extensionManager.installedExtensions.indices, id: \.self) { index in
                         let item = extensionManager.installedExtensions[index]
                         HStack {
-                            AppIcon(for: item.bundleIdentifier)
+                            appIcon(for: item.bundleIdentifier)
                                 .resizable()
                                 .frame(width: 24, height: 24)
                             Text(item.name)
@@ -670,7 +668,7 @@ struct Appearance: View {
     @Default(.selectedVisualizer) var selectedVisualizer
     let icons: [String] = ["logo2"]
     @State private var selectedIcon: String = "logo2"
-    @State private var selectedListVisualizer: CustomVisualizer? = nil
+    @State private var selectedListVisualizer: CustomVisualizer?
     
     @State private var isPresented: Bool = false
     @State private var name: String = ""
@@ -708,7 +706,7 @@ struct Appearance: View {
                 )
                 .disabled(true)
                 if !useMusicVisualizer {
-                    if customVisualizers.count > 0 {
+                    if customVisualizers.isEmpty {
                         Picker(
                             "Selected animation",
                             selection: $selectedVisualizer
@@ -791,7 +789,7 @@ struct Appearance: View {
                                 let visualizer = selectedListVisualizer!
                                 selectedListVisualizer = nil
                                 customVisualizers.remove(at: customVisualizers.firstIndex(of: visualizer)!)
-                                if visualizer == selectedVisualizer && customVisualizers.count > 0 {
+                                if visualizer == selectedVisualizer && customVisualizers.isEmpty {
                                     selectedVisualizer = customVisualizers[0]
                                 }
                             }
@@ -936,7 +934,7 @@ struct Appearance: View {
     }
     
     func checkVideoInput() -> Bool {
-        if let _ = AVCaptureDevice.default(for: .video) {
+        if AVCaptureDevice.default(for: .video) != nil {
             return true
         }
         

@@ -14,13 +14,21 @@ let defaultImage: NSImage = .init(
     accessibilityDescription: "Album Art"
 )!
 
+struct MusicData {
+    let title: String
+    let artist: String
+    let album: String
+    let duration: TimeInterval
+    var artworkData: Data?
+}
+
 class MusicManager: ObservableObject {
 
     // MARK: - Properties
     private var cancellables = Set<AnyCancellable>()
     private var debounceToggle: DispatchWorkItem?
     private var vm: BoringViewModel
-    private var lastMusicItem: (title: String, artist: String, album: String, duration: TimeInterval, artworkData: Data?)?
+    private var lastMusicItem: MusicData?
     private var isCurrentlyPlaying: Bool = false
     
     @Published var songTitle: String = "I'm Handsome"
@@ -34,7 +42,7 @@ class MusicManager: ObservableObject {
     @Published var isPlayerIdle: Bool = true
     @Published var animations: BoringAnimations = .init()
     @Published var avgColor: NSColor = .white
-    @Published var bundleIdentifier: String? = nil
+    @Published var bundleIdentifier: String?
     @Published var songDuration: TimeInterval = 0
     @Published var elapsedTime: TimeInterval = 0
     @Published var timestampDate: Date = Date()
@@ -45,8 +53,8 @@ class MusicManager: ObservableObject {
     
     private let mediaRemoteBundle: CFBundle
     private let MRMediaRemoteGetNowPlayingInfo: @convention(c) (DispatchQueue, @escaping ([String: Any]) -> Void) -> Void
-    private let MRMediaRemoteRegisterForNowPlayingNotifications: @convention(c) (DispatchQueue) -> Void
-    private let MRMediaRemoteGetNowPlayingApplicationIsPlaying: @convention(c) (DispatchQueue, @escaping (Bool) -> Void) -> Void
+    private let mrMediaRemoteRegisterForNowPlayingNotifications: @convention(c) (DispatchQueue) -> Void
+    private let mrMediaRemoteGetNowPlayingApplicationIsPlaying: @convention(c) (DispatchQueue, @escaping (Bool) -> Void) -> Void
     
     // MARK: - Initialization
     init?(vm: BoringViewModel) {
@@ -65,9 +73,8 @@ class MusicManager: ObservableObject {
         
         self.mediaRemoteBundle = bundle
         self.MRMediaRemoteGetNowPlayingInfo = unsafeBitCast(MRMediaRemoteGetNowPlayingInfoPointer, to: (@convention(c) (DispatchQueue, @escaping ([String: Any]) -> Void) -> Void).self)
-        self.MRMediaRemoteRegisterForNowPlayingNotifications = unsafeBitCast(MRMediaRemoteRegisterForNowPlayingNotificationsPointer, to: (@convention(c) (DispatchQueue) -> Void).self)
-        self.MRMediaRemoteGetNowPlayingApplicationIsPlaying = unsafeBitCast(MRMediaRemoteGetNowPlayingApplicationIsPlayingPointer, to: (@convention(c) (DispatchQueue, @escaping (Bool) -> Void) -> Void).self)
-        
+        self.mrMediaRemoteRegisterForNowPlayingNotifications = unsafeBitCast(MRMediaRemoteRegisterForNowPlayingNotificationsPointer, to: (@convention(c) (DispatchQueue) -> Void).self)
+        self.mrMediaRemoteGetNowPlayingApplicationIsPlaying = unsafeBitCast(MRMediaRemoteGetNowPlayingApplicationIsPlayingPointer, to: (@convention(c) (DispatchQueue, @escaping (Bool) -> Void) -> Void).self)
         
         setupNowPlayingObserver()
         fetchNowPlayingInfo()
@@ -86,7 +93,7 @@ class MusicManager: ObservableObject {
     
     // MARK: - Setup Methods
     private func setupNowPlayingObserver() {
-        MRMediaRemoteRegisterForNowPlayingNotifications(DispatchQueue.main)
+        mrMediaRemoteRegisterForNowPlayingNotifications(DispatchQueue.main)
         
         observeNotification(name: "kMRMediaRemoteNowPlayingInfoDidChangeNotification") { [weak self] in
             self?.fetchNowPlayingInfo(bundle: self?.nowPlaying.appBundleIdentifier ?? nil)
@@ -167,23 +174,27 @@ class MusicManager: ObservableObject {
         }
     }
     
-    private func extractMusicInfo(from information: [String: Any]) -> (title: String, artist: String, album: String, duration: TimeInterval, artworkData: Data?) {
+    private func extractMusicInfo(from information: [String: Any]) -> MusicData {
         let title = information["kMRMediaRemoteNowPlayingInfoTitle"] as? String ?? ""
         let artist = information["kMRMediaRemoteNowPlayingInfoArtist"] as? String ?? ""
         let album = information["kMRMediaRemoteNowPlayingInfoAlbum"] as? String ?? ""
         let duration = information["kMRMediaRemoteNowPlayingInfoDuration"] as? TimeInterval ?? lastMusicItem?.duration ?? 0
         let artworkData = information["kMRMediaRemoteNowPlayingInfoArtworkData"] as? Data
        
-        return (title, artist, album, duration, artworkData)
+        return MusicData(title: title, artist: artist, album: album, duration: duration, artworkData: artworkData)
     }
     
-    private func updateMusicState(newInfo: (title: String, artist: String, album: String, duration: TimeInterval, artworkData: Data?), state: Int?) {
-        if((newInfo.artworkData != nil && newInfo.artworkData != lastMusicItem?.artworkData) || (newInfo.title, newInfo.artist, newInfo.album) != (lastMusicItem?.title, lastMusicItem?.artist, lastMusicItem?.album)) {
+    private func updateMusicState(newInfo: MusicData, state: Int?) {
+        if (newInfo.artworkData != nil && newInfo.artworkData != lastMusicItem?.artworkData) || 
+           (newInfo.title, newInfo.artist, newInfo.album) != 
+           (lastMusicItem?.title, lastMusicItem?.artist, lastMusicItem?.album) {
             updateArtwork(newInfo.artworkData)
-            self.lastMusicItem?.artworkData = newInfo.artworkData
+            var updatedMusicItem = lastMusicItem
+            updatedMusicItem?.artworkData = newInfo.artworkData
+            lastMusicItem = updatedMusicItem
         }
-        self.lastMusicItem = (title: newInfo.title, artist: newInfo.artist, album: newInfo.album, duration: newInfo.duration, artworkData: lastMusicItem?.artworkData)
-        MRMediaRemoteGetNowPlayingApplicationIsPlaying(DispatchQueue.main) { [weak self] isPlaying in
+        lastMusicItem = newInfo
+        mrMediaRemoteGetNowPlayingApplicationIsPlaying(DispatchQueue.main) { [weak self] isPlaying in
             self?.musicIsPaused(state: isPlaying, setIdle: true)
         }
         self.artistName = newInfo.artist
@@ -197,7 +208,7 @@ class MusicManager: ObservableObject {
            let artworkImage = NSImage(data: artworkData) {
             self.usingAppIconForArtwork = false
             self.updateAlbumArt(newAlbumArt: artworkImage)
-        } else if let appIconImage = AppIconAsNSImage(for: bundleIdentifier ?? nowPlaying.appBundleIdentifier ?? "") {
+        } else if let appIconImage = appIconAsNSImage(for: bundleIdentifier ?? nowPlaying.appBundleIdentifier ?? "") {
             self.usingAppIconForArtwork = true
             self.updateAlbumArt(newAlbumArt: appIconImage)
         }
@@ -323,11 +334,13 @@ class MusicManager: ObservableObject {
             return
         }
         
-        let workspace = NSWorkspace.shared
-        if workspace.launchApplication(withBundleIdentifier: bundleID, options: [], additionalEventParamDescriptor: nil, launchIdentifier: nil) {
-            print("Launched app with bundle ID: \(bundleID)")
-        } else {
-            print("Failed to launch app with bundle ID: \(bundleID)")
+        guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+            print("Failed to find app with bundle ID: \(bundleID)")
+            return
         }
+        
+        let configuration = NSWorkspace.OpenConfiguration()
+        NSWorkspace.shared.openApplication(at: appURL, configuration: configuration)
+        print("Launched app with bundle ID: \(bundleID)")
     }
 }

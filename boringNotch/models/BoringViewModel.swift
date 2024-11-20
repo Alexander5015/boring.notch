@@ -29,7 +29,7 @@ enum SneakContentType {
     case download
 }
 
-struct sneakPeek {
+struct SneakPeek {
     var show: Bool = false
     var type: SneakContentType = .music
     var value: CGFloat = 0
@@ -103,7 +103,7 @@ class BoringViewModel: NSObject, ObservableObject {
         }
     }
     private var sneakPeekDuration: TimeInterval = 1.5
-    @Published var sneakPeek: sneakPeek = .init() {
+    @Published var sneakPeek: SneakPeek = .init() {
         didSet {
             if sneakPeek.show {
                 sneakPeekDispatch?.cancel()

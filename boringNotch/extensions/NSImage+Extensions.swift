@@ -6,25 +6,19 @@
 //
 
 import SwiftUI
-import AppKit
-import Cocoa
-import Foundation
-import CoreImage
-import CoreGraphics
 import CoreImage.CIFilterBuiltins
 
 extension NSImage {
 
-    
     func averageColor(completion: @escaping (NSColor?) -> Void) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            guard let cgImage = self.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-                DispatchQueue.main.async {
-                    completion(nil)
-                }
-                return
+        guard let cgImage = self.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            DispatchQueue.main.async {
+                completion(nil)
             }
-            
+            return
+        }
+        
+        DispatchQueue.global(qos: .userInitiated).async {
             let width = cgImage.width
             let height = cgImage.height
             let totalPixels = width * height

@@ -1,17 +1,15 @@
-    //
-    //  DataTypes+Extensions.swift
-    //  boringNotch
-    //
-    //  Created by Harsh Vardhan  Goswami  on 27/08/24.
-    //
+//
+//  DataTypes+Extensions.swift
+//  boringNotch
+//
+//  Created by Harsh Vardhan  Goswami  on 27/08/24.
+//
 
 import Foundation
 
-
-
 extension Date {
     static var yesterday: Date { return Date().dayBefore }
-    static var tomorrow:  Date { return Date().dayAfter }
+    static var tomorrow: Date { return Date().dayAfter }
     var dayBefore: Date {
         return Calendar.current.date(byAdding: .day, value: -1, to: noon)!
     }

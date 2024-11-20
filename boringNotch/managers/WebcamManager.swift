@@ -81,7 +81,7 @@ class WebcamManager: NSObject, ObservableObject {
     
     private func checkCameraAvailability() {
         let availableDevices = AVCaptureDevice.DiscoverySession(deviceTypes: [.external, .builtInWideAngleCamera], mediaType: .video, position: .unspecified).devices
-        if(!availableDevices.isEmpty && self.captureSession == nil) {
+        if !availableDevices.isEmpty && self.captureSession == nil {
             self.setupCaptureSession()
         }
         DispatchQueue.main.async {

@@ -13,7 +13,7 @@ class NotchSpaceManager {
     private var runLoopSource: CFRunLoopSource?
 
     private init() {
-        notchSpace = CGSSpace(level: 2147483647) // Max level
+        notchSpace = CGSSpace(level: Int32.max) // Max level
         startMonitoring()
     }
 

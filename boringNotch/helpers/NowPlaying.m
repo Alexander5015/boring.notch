@@ -120,8 +120,13 @@ extern NSString *kMRMediaRemoteNowPlayingInfoTitle;
             
             if (nil != appBundleIdentifier)
             {
-                NSString *path = [[NSWorkspace sharedWorkspace]
-                                  absolutePathForAppBundleWithIdentifier:appBundleIdentifier];
+                NSString *path;
+                NSURL *appURL = [[NSWorkspace sharedWorkspace] URLForApplicationWithBundleIdentifier:appBundleIdentifier];
+                if (appURL) {
+                    path = [appURL path];
+                } else {
+                    path = nil;
+                }
                 if (nil != path)
                 {
                     appName = [[NSFileManager defaultManager] displayNameAtPath:path];

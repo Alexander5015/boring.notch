@@ -19,7 +19,6 @@ struct ContentView: View {
     @EnvironmentObject var musicManager: MusicManager
     @StateObject var webcamManager: WebcamManager = .init()
     
-    
     @State private var hoverStartTime: Date?
     @State private var hoverTimer: Timer?
     @State private var hoverAnimation: Bool = false
@@ -185,89 +184,160 @@ struct ContentView: View {
         VStack(alignment: .leading) {
             VStack(alignment: .leading) {
                 if vm.firstLaunch {
-                    Spacer()
-                    HelloAnimation().frame(width: 200, height: 80).onAppear(perform: {
-                        vm.closeHello()
-                    })
-                    .padding(.top, 40)
-                    Spacer()
+                    firstLaunchView
                 } else {
-                    if vm.expandingView.type == .battery && vm.expandingView.show && vm.notchState == .closed {
-                        HStack(spacing: 0) {
-                            HStack {
-                                Text("Charging")
-                                    .font(.subheadline)
-                            }
-                            
-                            Rectangle()
-                                .fill(.black)
-                                .frame(width: vm.sizes.size.closed.width! + 5)
-                            
-                            HStack {
-                                BoringBatteryView(
-                                    batteryPercentage: batteryModel.batteryPercentage, isPluggedIn: batteryModel.isPluggedIn,
-                                    batteryWidth: 30,
-                                    isInLowPowerMode: batteryModel.isInLowPowerMode
-                                )
-                            }
-                            .frame(width: 76, alignment: .trailing)
-                        }
-                        .frame(height: Sizes().size.closed.height! + (hoverAnimation ? 8 : 0), alignment: .center)
-                    } else if vm.sneakPeek.show && Defaults[.inlineHUD] && (vm.sneakPeek.type != .music) && (vm.sneakPeek.type != .battery) {
-                        InlineHUD(type: $vm.sneakPeek.type, value: $vm.sneakPeek.value, icon: $vm.sneakPeek.icon, hoverAnimation: $hoverAnimation, gestureProgress: $gestureProgress)
-                            .transition(.opacity)
-                    } else if !vm.expandingView.show && vm.notchState == .closed && (musicManager.isPlaying || !musicManager.isPlayerIdle) && vm.showMusicLiveActivityOnClosed {
-                        MusicLiveActivity()
-                    } else {
-                        BoringHeader()
-                            .frame(height: max(24, Sizes().size.closed.height!))
-                            .blur(radius: abs(gestureProgress) > 0.3 ? min(abs(gestureProgress), 8) : 0)
-                    }
-                    
-                    if vm.sneakPeek.show && !Defaults[.inlineHUD] {
-                        if (vm.sneakPeek.type != .music) && (vm.sneakPeek.type != .battery) {
-                            SystemEventIndicatorModifier(eventType: $vm.sneakPeek.type, value: $vm.sneakPeek.value, icon: $vm.sneakPeek.icon, sendEventBack: { _ in
-                                //
-                            })
-                            .padding(.bottom, 10)
-                            .padding(.leading, 4)
-                            .padding(.trailing, 8)
-                        } else if vm.sneakPeek.type != .battery {
-                            if vm.notchState == .closed {
-                                HStack(alignment: .center) {
-                                    Image(systemName: "music.note")
-                                    GeometryReader { geo in
-                                        MarqueeText(.constant(musicManager.songTitle + " - " + musicManager.artistName), textColor: .gray, minDuration: 1, frameWidth: geo.size.width)
-                                    }
-                                }
-                                .foregroundStyle(.gray)
-                                .padding(.bottom, 10)
-                            }
-                        }
-                    }
+                    mainContent
+                    sneakPeekOverlay
                 }
             }
-            .conditionalModifier((vm.sneakPeek.show && (vm.sneakPeek.type == .music) && vm.notchState == .closed) || (vm.sneakPeek.show && (vm.sneakPeek.type != .music) && (musicManager.isPlaying || !musicManager.isPlayerIdle))) { view in
-                view
-                    .fixedSize()
+            .conditionalModifier(shouldApplyFixedSize) { view in
+                view.fixedSize()
             }
             .zIndex(2)
             
             ZStack {
-                if vm.notchState == .open {
-                    switch vm.currentView {
-                        case .home:
-                            NotchHomeView(albumArtNamespace: albumArtNamespace)
-                        case .shelf:
-                            NotchShelfView()
-                    }
-                }
+                notchOpenContent
             }
             .zIndex(1)
             .allowsHitTesting(vm.notchState == .open)
-            .blur(radius: abs(gestureProgress) > 0.3 ? min(abs(gestureProgress), 8) : 0)
-            .opacity(abs(gestureProgress) > 0.3 ? min(abs(gestureProgress * 2), 0.8) : 1)
+            .blur(radius: blurRadius)
+            .opacity(opacityValue)
         }
+    }
+
+    // MARK: - Helper Views
+    private var firstLaunchView: some View {
+        VStack {
+            Spacer()
+            HelloAnimation()
+                .frame(width: 200, height: 80)
+                .onAppear { vm.closeHello() }
+                .padding(.top, 40)
+            Spacer()
+        }
+    }
+
+    private var mainContent: some View {
+        Group {
+            if vm.expandingView.type == .battery && vm.expandingView.show && vm.notchState == .closed {
+                batteryView
+            } else if shouldShowInlineHUD {
+                InlineHUD(
+                    type: $vm.sneakPeek.type,
+                    value: $vm.sneakPeek.value,
+                    icon: $vm.sneakPeek.icon,
+                    hoverAnimation: $hoverAnimation,
+                    gestureProgress: $gestureProgress
+                )
+                .transition(.opacity)
+            } else if shouldShowMusicLiveActivity {
+                MusicLiveActivity()
+            } else {
+                BoringHeader()
+                    .frame(height: max(24, Sizes().size.closed.height!))
+                    .blur(radius: headerBlurRadius)
+            }
+        }
+    }
+
+    private var sneakPeekOverlay: some View {
+        Group {
+            if vm.sneakPeek.show && !Defaults[.inlineHUD] {
+                if vm.sneakPeek.type != .music && vm.sneakPeek.type != .battery {
+                    SystemEventIndicatorModifier(
+                        eventType: $vm.sneakPeek.type,
+                        value: $vm.sneakPeek.value,
+                        icon: $vm.sneakPeek.icon,
+                        sendEventBack: { _ in }
+                    )
+                    .padding(.bottom, 10)
+                    .padding(.leading, 4)
+                    .padding(.trailing, 8)
+                } else if vm.sneakPeek.type != .battery && vm.notchState == .closed {
+                    musicSneakPeek
+                }
+            }
+        }
+    }
+
+    private var musicSneakPeek: some View {
+        HStack(alignment: .center) {
+            Image(systemName: "music.note")
+            GeometryReader { geo in
+                MarqueeText(
+                    .constant("\(musicManager.songTitle) - \(musicManager.artistName)"),
+                    textColor: .gray,
+                    minDuration: 1,
+                    frameWidth: geo.size.width
+                )
+            }
+        }
+        .foregroundStyle(.gray)
+        .padding(.bottom, 10)
+    }
+
+    private var notchOpenContent: some View {
+        Group {
+            if vm.notchState == .open {
+                switch vm.currentView {
+                case .home:
+                    NotchHomeView(albumArtNamespace: albumArtNamespace)
+                case .shelf:
+                    NotchShelfView()
+                }
+            }
+        }
+    }
+
+    // MARK: - Helper Properties
+    private var batteryView: some View {
+        HStack(spacing: 0) {
+            HStack {
+                Text("Charging")
+                    .font(.subheadline)
+            }
+            Rectangle()
+                .fill(.black)
+                .frame(width: vm.sizes.size.closed.width! + 5)
+            HStack {
+                BoringBatteryView(
+                    batteryPercentage: batteryModel.batteryPercentage,
+                    isPluggedIn: batteryModel.isPluggedIn,
+                    batteryWidth: 30,
+                    isInLowPowerMode: batteryModel.isInLowPowerMode
+                )
+            }
+            .frame(width: 76, alignment: .trailing)
+        }
+        .frame(height: Sizes().size.closed.height! + (hoverAnimation ? 8 : 0), alignment: .center)
+    }
+
+    private var shouldShowInlineHUD: Bool {
+        vm.sneakPeek.show && Defaults[.inlineHUD] &&
+        (vm.sneakPeek.type != .music && vm.sneakPeek.type != .battery)
+    }
+
+    private var shouldShowMusicLiveActivity: Bool {
+        !vm.expandingView.show && vm.notchState == .closed &&
+        (musicManager.isPlaying || !musicManager.isPlayerIdle) &&
+        vm.showMusicLiveActivityOnClosed
+    }
+
+    private var shouldApplyFixedSize: Bool {
+        (vm.sneakPeek.show && vm.sneakPeek.type == .music && vm.notchState == .closed) ||
+        (vm.sneakPeek.show && vm.sneakPeek.type != .music && (musicManager.isPlaying || !musicManager.isPlayerIdle))
+    }
+
+    private var blurRadius: CGFloat {
+        abs(gestureProgress) > 0.3 ? min(abs(gestureProgress), 8) : 0
+    }
+
+    private var headerBlurRadius: CGFloat {
+        abs(gestureProgress) > 0.3 ? min(abs(gestureProgress), 8) : 0
+    }
+
+    private var opacityValue: CGFloat {
+        abs(gestureProgress) > 0.3 ? min(abs(gestureProgress * 2), 0.8) : 1
     }
     
     @ViewBuilder
@@ -308,7 +378,7 @@ struct ContentView: View {
                 }
             }
             .frame(width: max(0, Sizes().size.closed.height! - (hoverAnimation ? 0 : 12) + gestureProgress / 2),
-                   height:  max(0,Sizes().size.closed.height! - (hoverAnimation ? 0 : 12)), alignment: .center)
+                   height: max(0, Sizes().size.closed.height! - (hoverAnimation ? 0 : 12)), alignment: .center)
         }
         .frame(height: Sizes().size.closed.height! + (hoverAnimation ? 8 : 0), alignment: .center)
     }

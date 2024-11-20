@@ -8,7 +8,6 @@
 import Foundation
 import SwiftUI
 
-
 public class BoringAnimations {
     @Published var notchStyle: Style = .notch
     

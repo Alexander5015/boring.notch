@@ -1,9 +1,9 @@
-    //
-    //  ProgressIndicator.swift
-    //  boringNotch
-    //
-    //  Created by Harsh Vardhan  Goswami  on 11/08/24.
-    //
+//
+//  ProgressIndicator.swift
+//  boringNotch
+//
+//  Created by Harsh Vardhan  Goswami  on 11/08/24.
+//
 
 import Foundation
 import SwiftUI
@@ -39,8 +39,7 @@ enum ProgressIndicatorType {
     case text
 }
 
-
-    // based on type .circle or .text
+// based on type .circle or .text
 struct ProgressIndicator: View {
     var type: ProgressIndicatorType
     var progress: Double

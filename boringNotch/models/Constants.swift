@@ -29,11 +29,11 @@ extension Defaults.Keys {
         default: NonNotchHeightMode.matchRealNotchSize
     )
     static let nonNotchHeight = Key<CGFloat>("nonNotchHeight", default: 32)
-    //static let openLastTabByDefault = Key<Bool>("openLastTabByDefault", default: false)
+    // static let openLastTabByDefault = Key<Bool>("openLastTabByDefault", default: false)
     
     // MARK: Appearance
     static let showEmojis = Key<Bool>("showEmojis", default: false)
-    //static let alwaysShowTabs = Key<Bool>("alwaysShowTabs", default: true)
+    // static let alwaysShowTabs = Key<Bool>("alwaysShowTabs", default: true)
     static let showMirror = Key<Bool>("showMirror", default: false)
     static let mirrorShape = Key<MirrorShapeEnum>("mirrorShape", default: MirrorShapeEnum.rectangle)
     static let settingsIconInNotch = Key<Bool>("settingsIconInNotch", default: false)

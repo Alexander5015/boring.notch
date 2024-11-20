@@ -50,7 +50,7 @@ struct MarqueeText: View {
     }
     
     var body: some View {
-        GeometryReader { geometry in
+        GeometryReader { _ in
             ZStack(alignment: .leading) {
                 HStack(spacing: 20) {
                     Text(text)

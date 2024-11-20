@@ -1,9 +1,9 @@
-    //
-    //  SystemEventIndicatorModifier.swift
-    //  boringNotch
-    //
-    //  Created by Richard Kunkli on 12/08/2024.
-    //
+//
+//  SystemEventIndicatorModifier.swift
+//  boringNotch
+//
+//  Created by Richard Kunkli on 12/08/2024.
+//
 
 import SwiftUI
 import Defaults
@@ -25,10 +25,10 @@ struct SystemEventIndicatorModifier: View {
     
     var body: some View {
         HStack(spacing: 14) {
-            switch (eventType) {
+            switch eventType {
                 case .volume:
                     if icon.isEmpty {
-                        Image(systemName: SpeakerSymbol(value))
+                        Image(systemName: speakerSymbol(value))
                             .contentTransition(.interpolate)
                             .symbolVariant(value > 0 ? .none : .slash)
                             .frame(width: 20, height: 15, alignment: .leading)
@@ -58,7 +58,7 @@ struct SystemEventIndicatorModifier: View {
                 default:
                     EmptyView()
             }
-            if (eventType != .mic) {
+            if eventType != .mic {
                 DraggableProgressBar(value: $value)
             } else {
                 Text("Mic \(value > 0 ? "unmuted" : "muted")")
@@ -72,8 +72,8 @@ struct SystemEventIndicatorModifier: View {
         .imageScale(.large)
     }
     
-    func SpeakerSymbol(_ value: CGFloat) -> String {
-        switch(value) {
+    func speakerSymbol(_ value: CGFloat) -> String {
+        switch value {
             case 0:
                 return "speaker.slash"
             case 0...0.3:

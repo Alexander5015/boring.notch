@@ -32,11 +32,11 @@ class BoringNotchWindow: NSPanel {
             .fullScreenAuxiliary,
             .stationary,
             .canJoinAllSpaces,
-            .ignoresCycle,
+            .ignoresCycle
         ]
         
         isReleasedWhenClosed = false
-        level = .mainMenu + 3
+        level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.assistiveTechHighWindow)))
         hasShadow = false
     }
     

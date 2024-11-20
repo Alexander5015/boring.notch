@@ -31,7 +31,7 @@ struct DownloadArea: View {
         HStack(alignment: .center) {
             HStack {
                 if watcher.downloadFiles.first!.browser == .safari {
-                    AppIcon(for: "com.apple.safari")
+                    appIcon(for: "com.apple.safari")
                 } else {
                     Image(.chrome).resizable().scaledToFit().frame(width: 30, height: 30)
                 }

@@ -1,9 +1,9 @@
-    //
-    //  sizeMatters.swift
-    //  boringNotch
-    //
-    //  Created by Harsh Vardhan  Goswami  on 05/08/24.
-    //
+//
+//  sizeMatters.swift
+//  boringNotch
+//
+//  Created by Harsh Vardhan  Goswami  on 05/08/24.
+//
 
 import SwiftUI
 import Foundation
@@ -29,8 +29,7 @@ func setNotchSize(screen: String? = nil) -> CGSize {
     if let screen = selectedScreen {
         // Calculate and set the exact width of the notch
         if let topLeftNotchpadding: CGFloat = screen.auxiliaryTopLeftArea?.width,
-           let topRightNotchpadding: CGFloat = screen.auxiliaryTopRightArea?.width
-        {
+           let topRightNotchpadding: CGFloat = screen.auxiliaryTopRightArea?.width {
             notchWidth = screen.frame.width - topLeftNotchpadding - topRightNotchpadding + 10
         }
         

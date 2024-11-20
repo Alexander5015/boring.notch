@@ -1,4 +1,3 @@
-
 import SwiftUI
 
 struct NotchShelfView: View {
@@ -61,4 +60,3 @@ struct NotchShelfView: View {
         }
     }
 }
-

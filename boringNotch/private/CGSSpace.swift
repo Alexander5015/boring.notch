@@ -25,7 +25,7 @@ public final class CGSSpace {
     }
 
     /// Initialized `CGSSpace`s *MUST* be de-initialized upon app exit!
-    public init(level: Int = 0) {
+    public init(level: Int32 = 0) {
         let flag = 0x1 // this value MUST be 1, otherwise, Finder decides to draw desktop icons
         self.identifier = CGSSpaceCreate(_CGSDefaultConnection(), flag, nil)
         CGSSpaceSetAbsoluteLevel(_CGSDefaultConnection(), self.identifier, level)
@@ -34,7 +34,6 @@ public final class CGSSpace {
     }
 
     public init(id: UInt64) {
-        let flag = 0x1 // this value MUST be 1, otherwise, Finder decides to draw desktop icons
         self.identifier = id
         CGSShowSpaces(_CGSDefaultConnection(), [self.identifier])
         self.createdByInit = false // Mark as created externally
@@ -50,21 +49,21 @@ public final class CGSSpace {
 }
 
 // CGSSpace stuff:
-fileprivate typealias CGSConnectionID = UInt
-fileprivate typealias CGSSpaceID = UInt64
+private typealias CGSConnectionID = UInt
+private typealias CGSSpaceID = UInt64
 @_silgen_name("_CGSDefaultConnection")
-fileprivate func _CGSDefaultConnection() -> CGSConnectionID
+private func _CGSDefaultConnection() -> CGSConnectionID
 @_silgen_name("CGSSpaceCreate")
-fileprivate func CGSSpaceCreate(_ cid: CGSConnectionID, _ unknown: Int, _ options: NSDictionary?) -> CGSSpaceID
+private func CGSSpaceCreate(_ cid: CGSConnectionID, _ unknown: Int, _ options: NSDictionary?) -> CGSSpaceID
 @_silgen_name("CGSSpaceDestroy")
-fileprivate func CGSSpaceDestroy(_ cid: CGSConnectionID, _ space: CGSSpaceID)
+private func CGSSpaceDestroy(_ cid: CGSConnectionID, _ space: CGSSpaceID)
 @_silgen_name("CGSSpaceSetAbsoluteLevel")
-fileprivate func CGSSpaceSetAbsoluteLevel(_ cid: CGSConnectionID, _ space: CGSSpaceID, _ level: Int)
+private func CGSSpaceSetAbsoluteLevel(_ cid: CGSConnectionID, _ space: CGSSpaceID, _ level: Int32)
 @_silgen_name("CGSAddWindowsToSpaces")
-fileprivate func CGSAddWindowsToSpaces(_ cid: CGSConnectionID, _ windows: NSArray, _ spaces: NSArray)
+private func CGSAddWindowsToSpaces(_ cid: CGSConnectionID, _ windows: NSArray, _ spaces: NSArray)
 @_silgen_name("CGSRemoveWindowsFromSpaces")
-fileprivate func CGSRemoveWindowsFromSpaces(_ cid: CGSConnectionID, _ windows: NSArray, _ spaces: NSArray)
+private func CGSRemoveWindowsFromSpaces(_ cid: CGSConnectionID, _ windows: NSArray, _ spaces: NSArray)
 @_silgen_name("CGSHideSpaces")
-fileprivate func CGSHideSpaces(_ cid: CGSConnectionID, _ spaces: NSArray)
+private func CGSHideSpaces(_ cid: CGSConnectionID, _ spaces: NSArray)
 @_silgen_name("CGSShowSpaces")
-fileprivate func CGSShowSpaces(_ cid: CGSConnectionID, _ spaces: NSArray)
+private func CGSShowSpaces(_ cid: CGSConnectionID, _ spaces: NSArray)

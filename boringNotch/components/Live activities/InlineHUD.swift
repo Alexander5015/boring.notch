@@ -18,10 +18,10 @@ struct InlineHUD: View {
         HStack {
             HStack(spacing: 5) {
                 Group {
-                    switch (type) {
+                    switch type {
                         case .volume:
                             if icon.isEmpty {
-                                Image(systemName: SpeakerSymbol(value))
+                                Image(systemName: speakerSymbol(value))
                                     .contentTransition(.interpolate)
                                     .symbolVariant(value > 0 ? .none : .slash)
                                     .frame(width: 20, height: 15, alignment: .leading)
@@ -33,7 +33,7 @@ struct InlineHUD: View {
                                     .frame(width: 20, height: 15, alignment: .leading)
                             }
                         case .brightness:
-                            Image(systemName: BrightnessSymbol(value))
+                            Image(systemName: brightnessSymbol(value))
                                 .contentTransition(.interpolate)
                                 .frame(width: 20, height: 15, alignment: .center)
                         case .backlight:
@@ -53,7 +53,7 @@ struct InlineHUD: View {
                 .foregroundStyle(.white)
                 .symbolVariant(.fill)
                 
-                Text(Type2Name(type))
+                Text(type2Name(type))
                     .font(.subheadline)
                     .fontWeight(.medium)
                     .lineLimit(1)
@@ -67,7 +67,7 @@ struct InlineHUD: View {
                 .frame(width: vm.sizes.size.closed.width! - 20)
             
             HStack {
-                if (type == .mic) {
+                if type == .mic {
                     Text(value.isZero ? "muted" : "unmuted")
                         .foregroundStyle(.gray)
                         .lineLimit(1)
@@ -78,7 +78,7 @@ struct InlineHUD: View {
                 } else {
                     HStack {
                         DraggableProgressBar(value: $value)
-                        if (type == .volume && value.isZero) {
+                        if type == .volume && value.isZero {
                             Text("muted")
                                 .font(.caption)
                                 .fontWeight(.medium)
@@ -96,8 +96,8 @@ struct InlineHUD: View {
         .frame(height: Sizes().size.closed.height! + (hoverAnimation ? 8 : 0), alignment: .center)
     }
     
-    func SpeakerSymbol(_ value: CGFloat) -> String {
-        switch(value) {
+    func speakerSymbol(_ value: CGFloat) -> String {
+        switch value {
             case 0:
                 return "speaker"
             case 0...0.3:
@@ -111,8 +111,8 @@ struct InlineHUD: View {
         }
     }
     
-    func BrightnessSymbol(_ value: CGFloat) -> String {
-        switch(value) {
+    func brightnessSymbol(_ value: CGFloat) -> String {
+        switch value {
             case 0...0.6:
                 return "sun.min"
             case 0.6...1:
@@ -122,8 +122,8 @@ struct InlineHUD: View {
         }
     }
     
-    func Type2Name(_ type: SneakContentType) -> String {
-        switch(type) {
+    func type2Name(_ type: SneakContentType) -> String {
+        switch type {
             case .volume:
                 return "Volume"
             case .brightness:

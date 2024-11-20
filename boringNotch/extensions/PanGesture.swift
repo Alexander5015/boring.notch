@@ -77,7 +77,7 @@ struct PanGestureView: NSViewRepresentable {
                 }
                 
                 func handle() {
-                    if (direction == .left || direction == .right) {
+                    if direction == .left || direction == .right {
                         action(abs(accumulatedScrollDeltaX), event.phase)
                     } else {
                         action(abs(accumulatedScrollDeltaY), event.phase)

@@ -9,9 +9,9 @@ import SwiftUI
 
 struct HoverButton: View {
     var icon: String
-    var iconColor: Color = .white;
+    var iconColor: Color = .white
     var action: () -> Void
-    var contentTransition: ContentTransition = .symbolEffect;
+    var contentTransition: ContentTransition = .symbolEffect
     
     @State private var isHovering = false
 

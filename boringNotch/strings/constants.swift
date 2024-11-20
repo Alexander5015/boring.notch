@@ -9,5 +9,3 @@ import Foundation
 
 let productPage = URL(string: "https://github.com/TheBoredTeam/boring.notch")!
 let sponsorPage = URL(string: "https://buymeacoffee.com/jfxh67wvfxq")!
-
-

@@ -61,7 +61,7 @@ struct NotchHomeView: View {
                                     .matchedGeometryEffect(id: "albumArt", in: albumArtNamespace)
                                 
                                 if vm.notchState == .open && !musicManager.usingAppIconForArtwork {
-                                    AppIcon(for: musicManager.bundleIdentifier ?? "com.apple.Music")
+                                    appIcon(for: musicManager.bundleIdentifier ?? "com.apple.Music")
                                         .resizable()
                                         .aspectRatio(contentMode: .fill)
                                         .frame(width: 30, height: 30)
@@ -75,7 +75,7 @@ struct NotchHomeView: View {
                     
                     VStack(alignment: .leading) {
                         GeometryReader { geo in
-                            VStack(alignment: .leading, spacing: 4){
+                            VStack(alignment: .leading, spacing: 4) {
                                 MarqueeText($musicManager.songTitle, font: .headline, nsFont: .headline, textColor: .white, frameWidth: geo.size.width)
                                 MarqueeText(
                                     $musicManager.artistName,

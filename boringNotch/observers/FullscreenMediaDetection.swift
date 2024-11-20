@@ -71,9 +71,7 @@ class FullscreenMediaDetector: ObservableObject {
                   isOnScreen else {
                 return false
             }
-            
-            
-            
+
             let windowFrame = CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0, width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0)
             
             return NSScreen.screens.contains { screen in
