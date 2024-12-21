@@ -301,7 +301,7 @@ struct ContentView: View {
                             AudioSpectrumView(
                                 isPlaying: $musicManager.isPlaying
                             )
-                            .frame(width: 16, height: 12)
+                            .frame(width: vm.closedNotchSize.height/2, height: (vm.closedNotchSize.height/2)-4)
                         }
                         .matchedGeometryEffect(id: "spectrum", in: albumArtNamespace)
                 } else {
