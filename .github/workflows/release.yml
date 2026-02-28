@@ -324,7 +324,7 @@ jobs:
           ref: ${{ steps.comment-branch.outputs.head_ref }}
       - name: Download DMG artifact
         # TODO: pin to immutable SHA
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ env.projname }}.dmg
           path: Release
