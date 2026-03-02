@@ -1305,6 +1305,18 @@
         }
       }
     },
+    "Add File" : {
+
+    },
+    "Add Files to Shelf" : {
+
+    },
+    "Add Link" : {
+
+    },
+    "Add Links to Shelf" : {
+
+    },
     "Add manually" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1405,6 +1417,24 @@
           }
         }
       }
+    },
+    "Add one or more files to your shelf" : {
+
+    },
+    "Add one or more links to your shelf" : {
+
+    },
+    "Add one or more pieces of text to your shelf" : {
+
+    },
+    "Add Text" : {
+
+    },
+    "Add Text to Shelf" : {
+
+    },
+    "Added %@ to your shelf" : {
+
     },
     "Additional features" : {
       "localizations" : {
@@ -8117,6 +8147,9 @@
         }
       }
     },
+    "Files" : {
+
+    },
     "Files dropped on the shelf will be shared via this service" : {
       "localizations" : {
         "ar" : {
@@ -10435,6 +10468,9 @@
           }
         }
       }
+    },
+    "Links" : {
+
     },
     "Low" : {
       "localizations" : {
@@ -18934,6 +18970,9 @@
           }
         }
       }
+    },
+    "Texts" : {
+
     },
     "Time to Full Charge: %lld min" : {
       "localizations" : {

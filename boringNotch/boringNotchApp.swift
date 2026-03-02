@@ -26,6 +26,9 @@ struct DynamicNotchApp: App {
 
         // Initialize the settings window controller with the updater controller
         SettingsWindowController.shared.setUpdaterController(updaterController)
+
+        // Register app shortcuts
+        ShelfShortcuts.updateAppShortcutParameters()
     }
 
     var body: some Scene {
