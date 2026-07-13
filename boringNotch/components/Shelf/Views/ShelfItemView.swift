@@ -47,7 +47,7 @@ struct ShelfItemView: View {
                     item: item,
                     viewModel: viewModel,
                     dragPreviewContent: {
-                        DragPreviewView(thumbnail: viewModel.thumbnail ?? item.icon, displayName: item.displayName)
+                        DragPreviewView(thumbnail: viewModel.dragPreviewImage, displayName: viewModel.displayName)
                     },
                     onRightClick: viewModel.handleRightClick,
                     onClick: { event, nsview in
@@ -70,34 +70,54 @@ struct ShelfItemView: View {
             }
         }
         .onAppear {
-            Task { 
-                await viewModel.loadThumbnail()
-            }
             viewModel.onQuickLookRequest = { urls in
                 quickLookService.show(urls: urls, selectFirst: true)
             }
         }
+        .help(viewModel.isUnavailableFile ? "This file may have moved, been deleted, or require permission again." : "")
     }
 
     // MARK: - View Components
 
     private var iconView: some View {
-        Image(nsImage: viewModel.thumbnail ?? item.icon)
-            .resizable()
-            .aspectRatio(contentMode: .fit)
-            .frame(width: 56, height: 56)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .shadow(color: .black.opacity(0.15), radius: 3, x: 0, y: 2)
+        Group {
+            if case .file = item.kind, viewModel.resolvedFileURL != nil, let thumbnail = viewModel.thumbnail {
+                Image(nsImage: thumbnail)
+                    .resizable()
+            } else if case .file = item.kind {
+                Image(systemName: iconSystemName)
+                    .resizable()
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(Color.secondary)
+                    .padding(8)
+            } else {
+                Image(nsImage: viewModel.dragPreviewImage)
+                    .resizable()
+            }
+        }
+        .aspectRatio(contentMode: .fit)
+        .frame(width: 56, height: 56)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .shadow(color: .black.opacity(0.15), radius: 3, x: 0, y: 2)
     }
 
     private var textView: some View {
-        Text(item.displayName)
+        Text(viewModel.displayName)
             .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.primary)
+            .foregroundStyle(usesSecondaryPresentation ? Color.secondary : Color.primary)
             .lineLimit(2)
             .truncationMode(.middle)
             .multilineTextAlignment(.center)
             .frame(height: 30, alignment: .top)
+    }
+
+    private var iconSystemName: String {
+        viewModel.isUnavailableFile ? "doc.questionmark" : "doc"
+    }
+
+    private var usesSecondaryPresentation: Bool {
+        guard case .file = item.kind else { return false }
+        return viewModel.fileResolutionPhase != nil && viewModel.resolvedFileURL == nil
     }
 
     private var backgroundView: some View {
@@ -184,7 +204,7 @@ private struct DraggableClickHandler<Content: View>: NSViewRepresentable {
         }
         
         // Fallback to icon if rendering fails
-        return viewModel.thumbnail ?? item.icon
+        return viewModel.dragPreviewImage
     }
     
     final class DraggableClickView: NSView, NSDraggingSource {
@@ -209,6 +229,7 @@ private struct DraggableClickHandler<Content: View>: NSViewRepresentable {
         }
         
         override func mouseDragged(with event: NSEvent) {
+            guard viewModel?.canDrag == true else { return }
             guard let mouseDownEvent = mouseDownEvent else {
                 super.mouseDragged(with: event)
                 return
@@ -228,6 +249,7 @@ private struct DraggableClickHandler<Content: View>: NSViewRepresentable {
         }
         
         private func startDragSession(with event: NSEvent) {
+            guard viewModel?.canDrag == true else { return }
             // Prepare dragging items
             let selectedItems = ShelfSelectionModel.shared.selectedItems(in: ShelfStateViewModel.shared.items)
             let itemsToDrag: [ShelfItem]
@@ -238,8 +260,8 @@ private struct DraggableClickHandler<Content: View>: NSViewRepresentable {
                 itemsToDrag = [item]
             }
 
-            // Store items being dragged for auto-remove feature
-            draggedItems = itemsToDrag
+            // Track only items that are actually added to this drag session.
+            draggedItems = []
 
             // Create dragging items for AppKit
             var draggingItems: [NSDraggingItem] = []
@@ -249,7 +271,7 @@ private struct DraggableClickHandler<Content: View>: NSViewRepresentable {
                     let draggingItem = NSDraggingItem(pasteboardWriter: pasteboardWriter)
 
                     // Use the drag preview image - generated on demand
-                    let image = getDragPreview?() ?? dragItem.icon
+                    let image = getDragPreview?() ?? viewModel?.dragPreviewImage ?? NSImage()
                     let imageFrame = NSRect(
                         x: 0,
                         y: 0,
@@ -259,6 +281,7 @@ private struct DraggableClickHandler<Content: View>: NSViewRepresentable {
                     draggingItem.setDraggingFrame(imageFrame, contents: image)
 
                     draggingItems.append(draggingItem)
+                    draggedItems.append(dragItem)
                 }
             }
 
@@ -270,10 +293,8 @@ private struct DraggableClickHandler<Content: View>: NSViewRepresentable {
         private func pasteboardWriter(for item: ShelfItem) -> (any NSPasteboardWriting)? {
             switch item.kind {
             case .file:
-                guard let url = ShelfStateViewModel.shared.resolveAndUpdateBookmark(for: item) else {
-                    let fallback = NSPasteboardItem()
-                    fallback.setString(item.displayName, forType: .string)
-                    return fallback
+                guard let url = ShelfStateViewModel.shared.resolvedFileURL(for: item) else {
+                    return nil
                 }
 
                 // Start accessing security-scoped resource and keep it active during drag

@@ -22,6 +22,7 @@ final class ShelfStateViewModel: ObservableObject {
     // Debounced persistence
     private var persistenceTask: Task<Void, Never>?
     private let persistenceDelay: Duration = .seconds(1)
+    private var resolvedFileURLs: [UUID: URL] = [:]
 
     private init() {
         items = ShelfPersistenceService.shared.load()
@@ -52,15 +53,27 @@ final class ShelfStateViewModel: ObservableObject {
         items = merged
     }
 
-    func remove(_ item: ShelfItem) {
-        item.cleanupStoredData()
+    func remove(_ item: ShelfItem, resolvedURL: URL? = nil) {
+        if item.isTemporary, let resolvedURL = resolvedURL ?? resolvedFileURLs[item.id] {
+            TemporaryFileStorageService.shared.removeTemporaryFileIfNeeded(at: resolvedURL)
+        }
+        resolvedFileURLs[item.id] = nil
         items.removeAll { $0.id == item.id }
+    }
+
+    func cacheResolvedFileURL(_ url: URL?, for item: ShelfItem) {
+        guard items.contains(where: { $0.id == item.id }) else { return }
+        resolvedFileURLs[item.id] = url
+    }
+
+    func resolvedFileURL(for item: ShelfItem) -> URL? {
+        resolvedFileURLs[item.id]
     }
 
     func updateBookmark(for item: ShelfItem, bookmark: Data) {
         guard let idx = items.firstIndex(where: { $0.id == item.id }) else { return }
         if case .file = items[idx].kind {
-            items[idx] = ShelfItem(kind: .file(bookmark: bookmark), isTemporary:  items[idx].isTemporary)
+            items[idx] = ShelfItem(id: items[idx].id, kind: .file(bookmark: bookmark), isTemporary: items[idx].isTemporary)
         }
     }
 
@@ -75,45 +88,6 @@ final class ShelfStateViewModel: ObservableObject {
                 self?.isLoading = false
             }
         }
-    }
-
-    func cleanupInvalidItems() {
-        Task { [weak self] in
-            guard let self else { return }
-            var keep: [ShelfItem] = []
-            for item in self.items {
-                switch item.kind {
-                case .file(let data):
-                    let bookmark = Bookmark(data: data)
-                    if await bookmark.validate() {
-                        keep.append(item)
-                    } else {
-                        item.cleanupStoredData()
-                    }
-                default:
-                    keep.append(item)
-                }
-            }
-            await MainActor.run { self.items = keep }
-        }
-    }
-
-
-    /// Resolves the file URL for an item and updates the bookmark if stale.
-    /// Use this for user-initiated actions where bookmark refresh is desired.
-    func resolveAndUpdateBookmark(for item: ShelfItem) -> URL? {
-        guard case .file(let bookmarkData) = item.kind else { return nil }
-        let bookmark = Bookmark(data: bookmarkData)
-        let result = bookmark.resolve()
-        if let refreshed = result.refreshedData, refreshed != bookmarkData {
-            NSLog("Bookmark for \(item) stale; refreshing")
-            updateBookmark(for: item, bookmark: refreshed)
-        }
-        return result.url
-    }
-
-    func resolveFileURLs(for items: [ShelfItem]) -> [URL] {
-        items.compactMap { $0.fileURL }
     }
 
     @MainActor

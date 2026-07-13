@@ -8,6 +8,58 @@
 import Foundation
 import AppKit
 
+struct ResolvedShelfFile: Equatable, Sendable {
+    let url: URL
+    let refreshedBookmarkData: Data?
+    let displayName: String
+}
+
+enum ShelfFileResolutionPhase: Equatable, Sendable {
+    case loading
+    case available(ResolvedShelfFile)
+    case unavailable
+}
+
+struct ShelfFileResolutionState: Sendable {
+    private(set) var phase: ShelfFileResolutionPhase = .loading
+    private var generation: UInt = 0
+
+    mutating func begin() -> UInt {
+        generation &+= 1
+        phase = .loading
+        return generation
+    }
+
+    @discardableResult
+    mutating func timeOut(generation candidate: UInt) -> Bool {
+        guard candidate == generation, phase == .loading else { return false }
+        phase = .unavailable
+        return true
+    }
+
+    @discardableResult
+    mutating func finish(_ file: ResolvedShelfFile?, generation candidate: UInt) -> Bool {
+        guard candidate == generation else { return false }
+        phase = file.map(ShelfFileResolutionPhase.available) ?? .unavailable
+        return true
+    }
+}
+
+struct ShelfBookmarkResolver: Sendable {
+    private let resolution: @Sendable (Data) -> ResolvedShelfFile?
+
+    init(resolution: @escaping @Sendable (Data) -> ResolvedShelfFile?) {
+        self.resolution = resolution
+    }
+
+    func resolve(_ data: Data) async -> ResolvedShelfFile? {
+        let resolution = self.resolution
+        return await Task.detached(priority: .utility) {
+            resolution(data)
+        }.value
+    }
+}
+
 struct Bookmark: Sendable, Equatable, Codable {
     let data: Data
 
@@ -80,4 +132,46 @@ struct Bookmark: Sendable, Equatable, Codable {
             try block(url)
         }
     }
+}
+
+extension ShelfBookmarkResolver {
+    static let live = ShelfBookmarkResolver { bookmarkData in
+        let result = Bookmark(data: bookmarkData).resolve()
+        guard let url = result.url else { return nil }
+        return ResolvedShelfFile(
+            url: url,
+            refreshedBookmarkData: result.refreshedData,
+            displayName: shelfDisplayName(for: url)
+        )
+    }
+}
+
+private func shelfDisplayName(for url: URL) -> String {
+    if url.pathExtension.lowercased() == "json", url.path.contains("TextBlocks") {
+        struct TextBlockData: Codable {
+            let content: String
+            let title: String?
+
+            var displayTitle: String {
+                if let title, !title.isEmpty { return title }
+                let firstLine = content.components(separatedBy: .newlines).first ?? content
+                return firstLine.count > 50 ? String(firstLine.prefix(47)) + "..." : firstLine
+            }
+        }
+
+        if let data = try? Data(contentsOf: url) {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            if let textData = try? decoder.decode(TextBlockData.self, from: data) {
+                return textData.displayTitle
+            }
+        }
+    } else if url.pathExtension.lowercased() == "webloc", url.path.contains("WebLocs"),
+              let data = try? Data(contentsOf: url),
+              let propertyList = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+              let urlString = propertyList["URL"] as? String {
+        return (propertyList["Title"] as? String) ?? urlString
+    }
+
+    return (try? url.resourceValues(forKeys: [.localizedNameKey]).localizedName) ?? url.lastPathComponent
 }

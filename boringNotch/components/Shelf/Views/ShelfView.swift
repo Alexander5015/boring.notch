@@ -45,7 +45,7 @@ struct ShelfView: View {
         
         let selectedItems = selection.selectedItems(in: tvm.items)
         let urls: [URL] = selectedItems.compactMap { item in
-            if let fileURL = item.fileURL {
+            if let fileURL = tvm.resolvedFileURL(for: item) {
                 return fileURL
             }
             if case .link(let url) = item.kind {
@@ -108,9 +108,6 @@ struct ShelfView: View {
                     handleDrop(providers: providers)
                 }
             }
-        }
-        .onAppear {
-            ShelfStateViewModel.shared.cleanupInvalidItems()
         }
     }
 }
