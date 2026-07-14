@@ -84,18 +84,18 @@ struct ShelfItemView: View {
             if case .file = item.kind, viewModel.resolvedFileURL != nil, let thumbnail = viewModel.thumbnail {
                 Image(nsImage: thumbnail)
                     .resizable()
+                    .scaledToFit()
             } else if case .file = item.kind {
                 Image(systemName: iconSystemName)
-                    .resizable()
+                    .font(.system(size: 40, weight: .regular))
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(Color.secondary)
-                    .padding(8)
             } else {
                 Image(nsImage: viewModel.dragPreviewImage)
                     .resizable()
+                    .scaledToFit()
             }
         }
-        .aspectRatio(contentMode: .fit)
         .frame(width: 56, height: 56)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.15), radius: 3, x: 0, y: 2)
