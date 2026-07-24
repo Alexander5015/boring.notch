@@ -7,11 +7,28 @@
 
 import Foundation
 import AppKit
+import UniformTypeIdentifiers
 
 struct ResolvedShelfFile: Equatable, Sendable {
     let url: URL
     let refreshedBookmarkData: Data?
     let displayName: String
+    let isDirectory: Bool
+    let contentTypeIdentifier: String?
+
+    init(
+        url: URL,
+        refreshedBookmarkData: Data?,
+        displayName: String,
+        isDirectory: Bool = false,
+        contentTypeIdentifier: String? = nil
+    ) {
+        self.url = url
+        self.refreshedBookmarkData = refreshedBookmarkData
+        self.displayName = displayName
+        self.isDirectory = isDirectory
+        self.contentTypeIdentifier = contentTypeIdentifier
+    }
 }
 
 enum ShelfFileResolutionPhase: Equatable, Sendable {
@@ -138,15 +155,20 @@ extension ShelfBookmarkResolver {
     static let live = ShelfBookmarkResolver { bookmarkData in
         let result = Bookmark(data: bookmarkData).resolve()
         guard let url = result.url else { return nil }
+        let resourceValues = try? url.resourceValues(
+            forKeys: [.contentTypeKey, .isDirectoryKey, .localizedNameKey]
+        )
         return ResolvedShelfFile(
             url: url,
             refreshedBookmarkData: result.refreshedData,
-            displayName: shelfDisplayName(for: url)
+            displayName: shelfDisplayName(for: url, localizedName: resourceValues?.localizedName),
+            isDirectory: resourceValues?.isDirectory ?? false,
+            contentTypeIdentifier: resourceValues?.contentType?.identifier
         )
     }
 }
 
-private func shelfDisplayName(for url: URL) -> String {
+private func shelfDisplayName(for url: URL, localizedName: String?) -> String {
     if url.pathExtension.lowercased() == "json", url.path.contains("TextBlocks") {
         struct TextBlockData: Codable {
             let content: String
@@ -173,5 +195,5 @@ private func shelfDisplayName(for url: URL) -> String {
         return (propertyList["Title"] as? String) ?? urlString
     }
 
-    return (try? url.resourceValues(forKeys: [.localizedNameKey]).localizedName) ?? url.lastPathComponent
+    return localizedName ?? url.lastPathComponent
 }

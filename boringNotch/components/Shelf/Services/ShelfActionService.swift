@@ -8,36 +8,26 @@
 import AppKit
 import Foundation
 
-/// A service providing common actions for `ShelfItem`s, such as opening, revealing, or copying paths.
+/// Common actions shared by shelf item interactions.
 @MainActor
 enum ShelfActionService {
 
     static func open(_ item: ShelfItem) {
         switch item.kind {
         case .file:
-            _ = ShelfStateViewModel.shared.resolvedFileURL(for: item)?.accessSecurityScopedResource { url in
-                NSWorkspace.shared.open(url)
+            Task {
+                guard let file = await ShelfStateViewModel.shared.resolveFile(for: item, refresh: true) else {
+                    return
+                }
+                _ = file.url.accessSecurityScopedResource { url in
+                    NSWorkspace.shared.open(url)
+                }
             }
         case .link(let url):
             NSWorkspace.shared.open(url)
         case .text(let string):
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(string, forType: .string)
-        }
-    }
-
-    static func reveal(_ item: ShelfItem) {
-        guard case .file = item.kind else { return }
-        ShelfStateViewModel.shared.resolvedFileURL(for: item)?.accessSecurityScopedResource { url in
-            NSWorkspace.shared.activateFileViewerSelecting([url])
-        }
-    }
-
-    static func copyPath(_ item: ShelfItem) {
-        guard case .file = item.kind else { return }
-        ShelfStateViewModel.shared.resolvedFileURL(for: item)?.accessSecurityScopedResource { url in
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(url.path, forType: .string)
         }
     }
 

@@ -14,6 +14,7 @@ struct ShelfView: View {
     @StateObject var tvm = ShelfStateViewModel.shared
     @StateObject var selection = ShelfSelectionModel.shared
     @StateObject private var quickLookService = QuickLookService()
+    @State private var quickLookSelectionTask: Task<Void, Never>?
     private let spacing: CGFloat = 8
 
     var body: some View {
@@ -28,6 +29,8 @@ struct ShelfView: View {
         }
         // Bind Quick Look to shelf selection
         .onChange(of: selection.selectedIDs) {
+            let selectedItems = selection.selectedItems(in: tvm.items)
+            tvm.prefetchFileResolution(for: selectedItems)
             updateQuickLookSelection()
         }
         .quickLookPresenter(using: quickLookService)
@@ -41,21 +44,27 @@ struct ShelfView: View {
     }
     
     private func updateQuickLookSelection() {
+        quickLookSelectionTask?.cancel()
         guard quickLookService.isQuickLookOpen && !selection.selectedIDs.isEmpty else { return }
-        
         let selectedItems = selection.selectedItems(in: tvm.items)
-        let urls: [URL] = selectedItems.compactMap { item in
-            if let fileURL = tvm.resolvedFileURL(for: item) {
-                return fileURL
+        let selectedIDs = selection.selectedIDs
+
+        quickLookSelectionTask = Task {
+            let filesByItemID = await tvm.resolvedFilesByItemID(for: selectedItems, refresh: true)
+            guard !Task.isCancelled, selection.selectedIDs == selectedIDs else { return }
+            let urls: [URL] = selectedItems.compactMap { item in
+                if let fileURL = filesByItemID[item.id]?.url {
+                    return fileURL
+                }
+                if case .link(let url) = item.kind {
+                    return url
+                }
+                return nil
             }
-            if case .link(let url) = item.kind {
-                return url
+
+            if !urls.isEmpty {
+                quickLookService.updateSelection(urls: urls)
             }
-            return nil
-        }
-        
-        if !urls.isEmpty {
-            quickLookService.updateSelection(urls: urls)
         }
     }
 

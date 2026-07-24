@@ -52,10 +52,18 @@ struct ShelfItem: Identifiable, Codable, Equatable, Sendable {
     let id: UUID
     let kind: ShelfItemKind
     let isTemporary: Bool
-    init(id: UUID = UUID(), kind: ShelfItemKind, isTemporary: Bool = false) {
+    let fileIdentity: String?
+
+    init(
+        id: UUID = UUID(),
+        kind: ShelfItemKind,
+        isTemporary: Bool = false,
+        fileIdentity: String? = nil
+    ) {
         self.id = id
         self.kind = kind
         self.isTemporary = isTemporary
+        self.fileIdentity = fileIdentity
     }
 
 }
@@ -65,11 +73,18 @@ extension ShelfItem {
     var identityKey: String {
         switch kind {
         case .file(let bookmarkData):
+            if let fileIdentity {
+                return "file://" + fileIdentity
+            }
             return "file-bookmark://" + bookmarkData.base64EncodedString()
         case .link(let u):
             return "link://" + u.absoluteString
         case .text(let s):
             return "text://" + s
         }
+    }
+
+    static func fileIdentity(for url: URL) -> String {
+        url.standardizedFileURL.path
     }
 }

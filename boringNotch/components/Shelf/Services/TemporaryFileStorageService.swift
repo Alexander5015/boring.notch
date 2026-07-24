@@ -15,7 +15,7 @@ enum TempFileType {
     case url(URL)
 }
 
-class TemporaryFileStorageService {
+final class TemporaryFileStorageService: @unchecked Sendable {
     static let shared = TemporaryFileStorageService()
     
     // MARK: - Public Interface
@@ -53,6 +53,12 @@ class TemporaryFileStorageService {
         } catch {
             print("Error: \(error.localizedDescription)")
         }
+    }
+
+    func removeTemporaryFileIfNeededAsync(at url: URL) async {
+        await Task.detached(priority: .utility) {
+            self.removeTemporaryFileIfNeeded(at: url)
+        }.value
     }
     
     // MARK: - Private Implementation

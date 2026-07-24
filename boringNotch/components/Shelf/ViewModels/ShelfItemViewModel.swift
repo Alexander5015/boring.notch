@@ -18,36 +18,20 @@ final class ShelfItemViewModel: ObservableObject {
 
     // MARK: - Localization helpers
     private struct Strings {
-        static let open = NSLocalizedString("Shelf.ContextMenu.Open", comment: "Context menu item: Open")
-        static let openWith = NSLocalizedString("Shelf.ContextMenu.OpenWith", comment: "Context menu item: Open With")
-        static let noCompatibleApps = NSLocalizedString("Shelf.ContextMenu.NoCompatibleAppsFound", comment: "Context menu item: No Compatible Apps Found")
-        static let other = NSLocalizedString("Shelf.ContextMenu.Other", comment: "Context menu item: Other…")
-        static let showInFinder = NSLocalizedString("Shelf.ContextMenu.ShowInFinder", comment: "Context menu item: Show in Finder")
-        static let quickLook = NSLocalizedString("Shelf.ContextMenu.QuickLook", comment: "Context menu item: Quick Look")
-        static let share = NSLocalizedString("Shelf.ContextMenu.Share", comment: "Context menu item: Share…")
-        static let imageActions = NSLocalizedString("Shelf.ContextMenu.ImageActions", comment: "Context menu item: Image Actions")
-        static let removeBackground = NSLocalizedString("Shelf.ContextMenu.RemoveBackground", comment: "Context menu item: Remove Background")
-        static let convertImage = NSLocalizedString("Shelf.ContextMenu.ConvertImage", comment: "Context menu item: Convert Image…")
-        static let createPDF = NSLocalizedString("Shelf.ContextMenu.CreatePDF", comment: "Context menu item: Create PDF")
-        static let compress = NSLocalizedString("Shelf.ContextMenu.Compress", comment: "Context menu item: Compress")
-        static let rename = NSLocalizedString("Shelf.ContextMenu.Rename", comment: "Context menu item: Rename")
-        static let copy = NSLocalizedString("Shelf.ContextMenu.Copy", comment: "Context menu item: Copy")
-        static let copyPath = NSLocalizedString("Shelf.ContextMenu.CopyPath", comment: "Context menu item: Copy Path")
-        static let remove = NSLocalizedString("Shelf.ContextMenu.Remove", comment: "Context menu item: Remove")
         static let tryAgain = NSLocalizedString("Shelf.ContextMenu.TryAgain", value: "Try Again", comment: "Context menu item: retry unavailable file")
         static let removeFromShelf = NSLocalizedString("Shelf.ContextMenu.RemoveFromShelf", value: "Remove from Shelf", comment: "Context menu item: remove unavailable file")
     }
 
     @Published var thumbnail: NSImage?
     @Published private(set) var fileResolutionState = ShelfFileResolutionState()
-    @Published var isDropTargeted: Bool = false
-    @Published var isRenaming: Bool = false
-    @Published var draftTitle: String = ""
-    private var sharingLifecycle: SharingLifecycleDelegate?
     private var quickShareLifecycle: SharingLifecycleDelegate?
-    private var sharingAccessingURLs: [URL] = []
+    private static var sharingLifecycle: SharingLifecycleDelegate?
+    private static var sharingAccessingURLs: [URL] = []
+    private static var shareTask: Task<Void, Never>?
+    private static var shareGeneration: UUID?
     private static var copiedURLs: [URL] = []
-    private let bookmarkResolver: ShelfBookmarkResolver
+    private static var copyTask: Task<Void, Never>?
+    private static var copyGeneration: UUID?
     private let resolutionTimeout: Duration
     private var resolutionTask: Task<Void, Never>?
     private var timeoutTask: Task<Void, Never>?
@@ -56,20 +40,15 @@ final class ShelfItemViewModel: ObservableObject {
 
     init(
         item: ShelfItem,
-        bookmarkResolver: ShelfBookmarkResolver = .live,
         resolutionTimeout: Duration = .seconds(2)
     ) {
         self.item = item
-        self.bookmarkResolver = bookmarkResolver
         self.resolutionTimeout = resolutionTimeout
-        self.draftTitle = Self.nonFileDisplayName(for: item.kind) ?? ""
 
         if case .file = item.kind {
             startFileResolution()
         }
     }
-
-    var isSelected: Bool { selection.isSelected(item.id) }
 
     var fileResolutionPhase: ShelfFileResolutionPhase? {
         guard case .file = item.kind else { return nil }
@@ -89,6 +68,10 @@ final class ShelfItemViewModel: ObservableObject {
     var canDrag: Bool {
         guard case .file = item.kind else { return true }
         return resolvedFileURL != nil
+    }
+
+    var canRetryFileResolution: Bool {
+        isUnavailableFile
     }
 
     var displayName: String {
@@ -113,32 +96,39 @@ final class ShelfItemViewModel: ObservableObject {
     }
 
     func retryResolution() {
-        startFileResolution()
+        guard canRetryFileResolution else { return }
+        startFileResolution(refresh: true, restartPending: true)
     }
 
-    private func startFileResolution() {
+    private func startFileResolution(
+        refresh: Bool = false,
+        restartPending: Bool = false
+    ) {
         guard case .file(let bookmarkData) = item.kind else { return }
 
         resolutionTask?.cancel()
         timeoutTask?.cancel()
         thumbnail = nil
-        ShelfStateViewModel.shared.cacheResolvedFileURL(nil, for: item)
 
         let generation = fileResolutionState.begin()
-        let resolver = bookmarkResolver
         resolutionTask = Task { [weak self] in
-            let resolvedFile = await resolver.resolve(bookmarkData)
-            guard let self,
+            let resolvedFile = await ShelfStateViewModel.shared.resolveFile(
+                for: item,
+                refresh: refresh,
+                restartPending: restartPending
+            )
+            guard !Task.isCancelled,
+                  let self,
                   self.fileResolutionState.finish(resolvedFile, generation: generation) else { return }
 
             guard let resolvedFile else { return }
-            self.draftTitle = resolvedFile.displayName
-            ShelfStateViewModel.shared.cacheResolvedFileURL(resolvedFile.url, for: self.item)
-
-            if let refreshedData = resolvedFile.refreshedBookmarkData, refreshedData != bookmarkData {
-                ShelfStateViewModel.shared.updateBookmark(for: self.item, bookmark: refreshedData)
-                self.item = ShelfItem(id: self.item.id, kind: .file(bookmark: refreshedData), isTemporary: self.item.isTemporary)
-            }
+            let effectiveBookmarkData = resolvedFile.refreshedBookmarkData ?? bookmarkData
+            self.item = ShelfItem(
+                id: self.item.id,
+                kind: .file(bookmark: effectiveBookmarkData),
+                isTemporary: self.item.isTemporary,
+                fileIdentity: ShelfItem.fileIdentity(for: resolvedFile.url)
+            )
             await self.loadThumbnail(for: resolvedFile.url)
         }
 
@@ -150,14 +140,15 @@ final class ShelfItemViewModel: ObservableObject {
         }
     }
 
-    func loadThumbnail() async {
-        guard let url = resolvedFileURL else { return }
-        await loadThumbnail(for: url)
-    }
-
     private func loadThumbnail(for url: URL) async {
-        thumbnail = NSWorkspace.shared.icon(forFile: url.path)
+        let workspaceIcon = await Task.detached(priority: .utility) {
+            NSWorkspace.shared.icon(forFile: url.path)
+        }.value
+        guard resolvedFileURL == url else { return }
+        thumbnail = workspaceIcon
+
         if let image = await ThumbnailService.shared.thumbnail(for: url, size: CGSize(width: 56, height: 56)) {
+            guard resolvedFileURL == url else { return }
             self.thumbnail = NSImage(cgImage: image, size: CGSize(width: 56, height: 56))
         }
     }
@@ -204,61 +195,15 @@ final class ShelfItemViewModel: ObservableObject {
         return image
     }
 
-    private func replaceBookmarkAfterRename(_ bookmarkData: Data) {
-        ShelfStateViewModel.shared.updateBookmark(for: item, bookmark: bookmarkData)
-        item = ShelfItem(id: item.id, kind: .file(bookmark: bookmarkData), isTemporary: item.isTemporary)
-        startFileResolution()
-    }
-
-    // MARK: - Drag & Drop helpers
-    func dragItemProvider() -> NSItemProvider {
-    let selectedItems = selection.selectedItems(in: ShelfStateViewModel.shared.items)
-        if selectedItems.count > 1 && selectedItems.contains(where: { $0.id == item.id }) {
-            return createMultiItemProvider(for: selectedItems)
-        }
-        return createItemProvider(for: item)
-    }
-
-    private func createItemProvider(for item: ShelfItem) -> NSItemProvider {
-        switch item.kind {
-        case .file:
-            let provider = NSItemProvider()
-            if let url = ShelfStateViewModel.shared.resolvedFileURL(for: item) {
-                provider.registerObject(url as NSURL, visibility: .all)
-            }
-            return provider
-        case .text(let string):
-            return NSItemProvider(object: string as NSString)
-        case .link(let url):
-            return NSItemProvider(object: url as NSURL)
-        }
-    }
-
-    private func createMultiItemProvider(for items: [ShelfItem]) -> NSItemProvider {
-        let provider = NSItemProvider()
-        var urls: [URL] = []
-        var textItems: [String] = []
-        for item in items {
-            switch item.kind {
-            case .file:
-                if let url = ShelfStateViewModel.shared.resolvedFileURL(for: item) {
-                    urls.append(url)
-                }
-            case .text(let string):
-                textItems.append(string)
-            case .link:
-                break
-            }
-        }
-        if !urls.isEmpty {
-            for url in urls {
-                provider.registerObject(url as NSURL, visibility: .all)
-            }
-        }
-        if !textItems.isEmpty {
-            provider.registerObject(textItems.joined(separator: "\n") as NSString, visibility: .all)
-        }
-        return provider
+    private func replaceBookmarkAfterRename(_ bookmarkData: Data, url: URL) {
+        ShelfStateViewModel.shared.updateBookmark(for: item, bookmark: bookmarkData, resolvedURL: url)
+        item = ShelfItem(
+            id: item.id,
+            kind: .file(bookmark: bookmarkData),
+            isTemporary: item.isTemporary,
+            fileIdentity: ShelfItem.fileIdentity(for: url)
+        )
+        startFileResolution(refresh: true)
     }
 
     // MARK: - Actions
@@ -282,22 +227,32 @@ final class ShelfItemViewModel: ObservableObject {
     }
 
     func handleDoubleClick() {
-    let selected = ShelfSelectionModel.shared.selectedItems(in: ShelfStateViewModel.shared.items)
+        let selected = ShelfSelectionModel.shared.selectedItems(in: ShelfStateViewModel.shared.items)
         for it in selected { ShelfActionService.open(it) }
     }
 
     func shareItem(from view: NSView?) {
-        Task {
+        guard Self.sharingLifecycle == nil else { return }
+
+        Self.shareTask?.cancel()
+        let generation = UUID()
+        Self.shareGeneration = generation
+        Self.shareTask = Task {
             var itemsToShare: [Any] = []
             var fileURLs: [URL] = []
             if case .text(let text) = item.kind {
                 itemsToShare.append(text)
             } else {
-                for item in ShelfSelectionModel.shared.selectedItems(in: ShelfStateViewModel.shared.items) {
+                let selectedItems = ShelfSelectionModel.shared.selectedItems(in: ShelfStateViewModel.shared.items)
+                let filesByItemID = await ShelfStateViewModel.shared.resolvedFilesByItemID(
+                    for: selectedItems,
+                    refresh: true
+                )
+
+                for item in selectedItems {
                     switch item.kind {
                     case .file:
-                        // Use immediate update for user-initiated share action
-                        if let url = ShelfStateViewModel.shared.resolvedFileURL(for: item) {
+                        if let url = filesByItemID[item.id]?.url {
                             itemsToShare.append(url)
                             fileURLs.append(url)
                         }
@@ -309,19 +264,32 @@ final class ShelfItemViewModel: ObservableObject {
                 }
             }
             
-            guard !itemsToShare.isEmpty else { return }
-             
-            stopSharingAccessingURLs()
-            // Start security-scoped access for all file URLs and keep it active during sharing
-            sharingAccessingURLs = fileURLs.filter { $0.startAccessingSecurityScopedResource() }
-            
-            // Create and retain lifecycle delegate for the entire share operation
-            let lifecycle = SharingStateManager.shared.makeDelegate { [weak self] in
-                self?.sharingLifecycle = nil
-                self?.stopSharingAccessingURLs()
+            guard !Task.isCancelled,
+                  Self.shareGeneration == generation,
+                  !itemsToShare.isEmpty else {
+                return
             }
-            self.sharingLifecycle = lifecycle
-            
+
+            // Start security-scoped access for all file URLs and keep it active during sharing
+            let accessingURLs = fileURLs.filter { $0.startAccessingSecurityScopedResource() }
+            guard !Task.isCancelled, Self.shareGeneration == generation else {
+                for url in accessingURLs {
+                    url.stopAccessingSecurityScopedResource()
+                }
+                return
+            }
+            Self.sharingAccessingURLs = accessingURLs
+
+            // Create and retain lifecycle delegate for the entire share operation
+            let lifecycle = SharingStateManager.shared.makeDelegate {
+                guard Self.shareGeneration == generation else { return }
+                Self.sharingLifecycle = nil
+                Self.shareTask = nil
+                Self.shareGeneration = nil
+                Self.stopSharingAccessingURLs()
+            }
+            Self.sharingLifecycle = lifecycle
+
             let picker = NSSharingServicePicker(items: itemsToShare)
             picker.delegate = lifecycle
             lifecycle.markPickerBegan()
@@ -331,7 +299,7 @@ final class ShelfItemViewModel: ObservableObject {
         }
     }
     
-    private func stopSharingAccessingURLs() {
+    private static func stopSharingAccessingURLs() {
         for url in sharingAccessingURLs {
             url.stopAccessingSecurityScopedResource()
         }
@@ -342,32 +310,6 @@ final class ShelfItemViewModel: ObservableObject {
     var onQuickLookRequest: (([URL]) -> Void)?
 
     // MARK: - Context Menu helpers (extracted from view)
-    func loadOpenWithApps() -> [URL] {
-        // Support both files and link items. For link items we ask NSWorkspace for apps that can open the URL (browsers).
-        if let fileURL = ShelfStateViewModel.shared.resolvedFileURL(for: item) {
-            var results: [URL] = NSWorkspace.shared.urlsForApplications(toOpen: fileURL)
-            if results.isEmpty {
-                if let uti = try? fileURL.resourceValues(forKeys: [.contentTypeKey]).contentType {
-                    results = NSWorkspace.shared.urlsForApplications(toOpen: uti)
-                }
-            }
-            let unique = Array(Set(results))
-            let sorted = unique.sorted { appDisplayName(for: $0) < appDisplayName(for: $1) }
-            return sorted
-        } else if case .link(let url) = item.kind {
-            var results: [URL] = NSWorkspace.shared.urlsForApplications(toOpen: url)
-            if results.isEmpty {
-                if let uti = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType {
-                    results = NSWorkspace.shared.urlsForApplications(toOpen: uti)
-                }
-            }
-            let unique = Array(Set(results))
-            let sorted = unique.sorted { appDisplayName(for: $0) < appDisplayName(for: $1) }
-            return sorted
-        }
-        return []
-    }
-
     private func ensureContextMenuSelection() {
         if !selection.isSelected(item.id) { selection.selectSingle(item) }
     }
@@ -382,8 +324,10 @@ final class ShelfItemViewModel: ObservableObject {
         }
 
         if isUnavailableFile {
-            addMenuItem(title: Strings.tryAgain)
-            menu.addItem(NSMenuItem.separator())
+            if canRetryFileResolution {
+                addMenuItem(title: Strings.tryAgain)
+                menu.addItem(NSMenuItem.separator())
+            }
             addMenuItem(title: Strings.removeFromShelf)
 
             let actionTarget = MenuActionTarget(item: item, view: view, viewModel: self)
@@ -397,14 +341,17 @@ final class ShelfItemViewModel: ObservableObject {
         }
 
         let selectedItems = ShelfSelectionModel.shared.selectedItems(in: ShelfStateViewModel.shared.items)
-        let selectedFileURLs = selectedItems.compactMap { ShelfStateViewModel.shared.resolvedFileURL(for: $0) }
+        let selectedFiles = selectedItems.compactMap { ShelfStateViewModel.shared.resolvedFile(for: $0) }
+        let selectedFileURLs = selectedFiles.map(\.url)
         let selectedLinkURLs: [URL] = selectedItems.compactMap { itm in
             if case .link(let url) = itm.kind { return url }
             return nil
         }
         // URLs valid for Open/Open With (exclude folders)
         let selectedOpenableURLs = selectedItems.compactMap { itm -> URL? in
-            if let u = ShelfStateViewModel.shared.resolvedFileURL(for: itm) { return isDirectory(u) ? nil : u }
+            if let file = ShelfStateViewModel.shared.resolvedFile(for: itm) {
+                return file.isDirectory ? nil : file.url
+            }
             if case .link(let url) = itm.kind { return url }
             return nil
         }
@@ -418,8 +365,14 @@ final class ShelfItemViewModel: ObservableObject {
             let submenu = NSMenu()
 
             // Choose a representative URL to compute apps (prefer current item if not a folder)
+            let baseFileForApps: ResolvedShelfFile? = {
+                if let file = ShelfStateViewModel.shared.resolvedFile(for: item), !file.isDirectory {
+                    return file
+                }
+                return selectedFiles.first(where: { !$0.isDirectory })
+            }()
             let baseURLForApps: URL? = {
-                if let u = resolvedFileURL, !isDirectory(u) { return u }
+                if let file = baseFileForApps { return file.url }
                 if case .link(let u) = item.kind { return u }
                 return selectedOpenableURLs.first
             }()
@@ -428,7 +381,9 @@ final class ShelfItemViewModel: ObservableObject {
                 guard let u = baseURLForApps else { return [] }
                 if u.isFileURL {
                     var results = NSWorkspace.shared.urlsForApplications(toOpen: u)
-                    if results.isEmpty, let uti = try? u.resourceValues(forKeys: [.contentTypeKey]).contentType {
+                    if results.isEmpty,
+                       let identifier = baseFileForApps?.contentTypeIdentifier,
+                       let uti = UTType(identifier) {
                         results = NSWorkspace.shared.urlsForApplications(toOpen: uti)
                     }
                     return Array(Set(results))
@@ -500,7 +455,7 @@ final class ShelfItemViewModel: ObservableObject {
         addMenuItem(title: "Share…")
         
         // Add image processing options for image files grouped under "Image Actions"
-        let imageURLs = selectedFileURLs.filter { ImageProcessingService.shared.isImageFile($0) }
+        let imageURLs = selectedFiles.filter(Self.isImageFile).map(\.url)
         if !imageURLs.isEmpty {
             menu.addItem(NSMenuItem.separator())
 
@@ -571,10 +526,12 @@ final class ShelfItemViewModel: ObservableObject {
         NSMenu.popUpContextMenu(menu, with: event, for: view)
     }
 
-    private func isDirectory(_ url: URL) -> Bool {
-        return url.accessSecurityScopedResource { scoped in
-            (try? scoped.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+    private static func isImageFile(_ file: ResolvedShelfFile) -> Bool {
+        if let identifier = file.contentTypeIdentifier,
+           let contentType = UTType(identifier) {
+            return contentType.conforms(to: .image)
         }
+        return UTType(filenameExtension: file.url.pathExtension)?.conforms(to: .image) == true
     }
 
     private final class MenuActionTarget: NSObject {
@@ -595,7 +552,10 @@ final class ShelfItemViewModel: ObservableObject {
             let title = sender.title
 
             if let marker = sender.representedObject as? String, marker == "__OTHER__" {
-                openWithPanel()
+                Task {
+                    _ = await ShelfStateViewModel.shared.resolveFile(for: item, refresh: true)
+                    openWithPanel()
+                }
                 return
             }
 
@@ -603,32 +563,36 @@ final class ShelfItemViewModel: ObservableObject {
                 let selected = ShelfSelectionModel.shared.selectedItems(in: ShelfStateViewModel.shared.items)
                 
                 Task {
-                        var allSelectedURLs: [URL] = []
+                    let filesByItemID = await ShelfStateViewModel.shared.resolvedFilesByItemID(
+                        for: selected,
+                        refresh: true
+                    )
+                    var allSelectedURLs: [URL] = []
 
-                        for itm in selected {
-                            if let fileURL = ShelfStateViewModel.shared.resolvedFileURL(for: itm) {
-                                allSelectedURLs.append(fileURL)
-                            } else if case .link(let url) = itm.kind {
-                                allSelectedURLs.append(url)
-                            }
+                    for itm in selected {
+                        if let fileURL = filesByItemID[itm.id]?.url {
+                            allSelectedURLs.append(fileURL)
+                        } else if case .link(let url) = itm.kind {
+                            allSelectedURLs.append(url)
                         }
+                    }
 
-                        guard !allSelectedURLs.isEmpty else { return }
+                    guard !allSelectedURLs.isEmpty else { return }
 
-                        let config = NSWorkspace.OpenConfiguration()
+                    let config = NSWorkspace.OpenConfiguration()
 
-                        let fileURLs = allSelectedURLs.filter { $0.isFileURL }
-                        do {
-                            if !fileURLs.isEmpty {
-                                _ = try await fileURLs.accessSecurityScopedResources { _ in
-                                    try await NSWorkspace.shared.open(allSelectedURLs, withApplicationAt: appURL, configuration: config)
-                                }
-                            } else {
+                    let fileURLs = allSelectedURLs.filter { $0.isFileURL }
+                    do {
+                        if !fileURLs.isEmpty {
+                            _ = try await fileURLs.accessSecurityScopedResources { _ in
                                 try await NSWorkspace.shared.open(allSelectedURLs, withApplicationAt: appURL, configuration: config)
                             }
-                        } catch {
-                            print("❌ Failed to open with application: \(error.localizedDescription)")
+                        } else {
+                            try await NSWorkspace.shared.open(allSelectedURLs, withApplicationAt: appURL, configuration: config)
                         }
+                    } catch {
+                        print("❌ Failed to open with application: \(error.localizedDescription)")
+                    }
                 }
                 return
             }
@@ -643,17 +607,23 @@ final class ShelfItemViewModel: ObservableObject {
             case "Quick Look":
                 // Handle all selected items for Quick Look, not just the clicked item
                 let selected = ShelfSelectionModel.shared.selectedItems(in: ShelfStateViewModel.shared.items)
-                let urls: [URL] = selected.compactMap { item in
-                    if let fileURL = ShelfStateViewModel.shared.resolvedFileURL(for: item) {
-                        return fileURL
+                Task {
+                    let filesByItemID = await ShelfStateViewModel.shared.resolvedFilesByItemID(
+                        for: selected,
+                        refresh: true
+                    )
+                    let urls: [URL] = selected.compactMap { item in
+                        if let fileURL = filesByItemID[item.id]?.url {
+                            return fileURL
+                        }
+                        if case .link(let url) = item.kind {
+                            return url
+                        }
+                        return nil
                     }
-                    if case .link(let url) = item.kind {
-                        return url
+                    if !urls.isEmpty {
+                        viewModel?.onQuickLookRequest?(urls)
                     }
-                    return nil
-                }
-                if !urls.isEmpty {
-                    viewModel?.onQuickLookRequest?(urls)
                 }
 
             case "Open":
@@ -670,13 +640,7 @@ final class ShelfItemViewModel: ObservableObject {
             case "Show in Finder":
                 let selected = ShelfSelectionModel.shared.selectedItems(in: ShelfStateViewModel.shared.items)
                 Task {
-                    let urls = await selected.asyncCompactMap { item -> URL? in
-                        if case .file = item.kind {
-                            // Use immediate update for user-initiated menu action
-                            return ShelfStateViewModel.shared.resolvedFileURL(for: item)
-                        }
-                        return nil
-                    }
+                    let urls = await ShelfStateViewModel.shared.resolvedFileURLs(for: selected, refresh: true)
                     if !urls.isEmpty {
                         await urls.accessSecurityScopedResources { accessibleURLs in
                             NSWorkspace.shared.activateFileViewerSelecting(accessibleURLs)
@@ -686,35 +650,51 @@ final class ShelfItemViewModel: ObservableObject {
 
             case "Copy Path":
                 let selected = ShelfSelectionModel.shared.selectedItems(in: ShelfStateViewModel.shared.items)
-                let paths = selected.compactMap { ShelfStateViewModel.shared.resolvedFileURL(for: $0)?.path }
-                if !paths.isEmpty {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(paths.joined(separator: "\n"), forType: .string)
+                Task {
+                    let fileURLs = await ShelfStateViewModel.shared.resolvedFileURLs(for: selected, refresh: true)
+                    let paths = fileURLs.map(\.path)
+                    if !paths.isEmpty {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(paths.joined(separator: "\n"), forType: .string)
+                    }
                 }
 
             case "Copy":
                 let selected = ShelfSelectionModel.shared.selectedItems(in: ShelfStateViewModel.shared.items)
                 let pb = NSPasteboard.general
-                
+
+                ShelfItemViewModel.copyTask?.cancel()
+
                 // Stop accessing previously copied URLs
                 for url in ShelfItemViewModel.copiedURLs {
                     url.stopAccessingSecurityScopedResource()
                 }
                 ShelfItemViewModel.copiedURLs.removeAll()
-                
                 pb.clearContents()
-                Task {
-                    let fileURLs = await selected.asyncCompactMap { item -> URL? in
-                        if case .file = item.kind {
-                            return ShelfStateViewModel.shared.resolvedFileURL(for: item)
-                        }
-                        return nil
+
+                let generation = UUID()
+                ShelfItemViewModel.copyGeneration = generation
+                ShelfItemViewModel.copyTask = Task {
+                    let fileURLs = await ShelfStateViewModel.shared.resolvedFileURLs(for: selected, refresh: true)
+                    guard !Task.isCancelled,
+                          ShelfItemViewModel.copyGeneration == generation else {
+                        return
                     }
+
                     if !fileURLs.isEmpty {
                         // Start security-scoped access for all URLs and keep them active
-                        ShelfItemViewModel.copiedURLs = fileURLs.filter { $0.startAccessingSecurityScopedResource() }
+                        let accessingURLs = fileURLs.filter { $0.startAccessingSecurityScopedResource() }
+                        guard !Task.isCancelled,
+                              ShelfItemViewModel.copyGeneration == generation else {
+                            for url in accessingURLs {
+                                url.stopAccessingSecurityScopedResource()
+                            }
+                            return
+                        }
+
+                        ShelfItemViewModel.copiedURLs = accessingURLs
                         NSLog("🔐 Started security-scoped access for \(ShelfItemViewModel.copiedURLs.count) copied files")
-                        
+
                         // Write to pasteboard
                         pb.writeObjects(fileURLs as [NSURL])
                     } else {
@@ -726,6 +706,7 @@ final class ShelfItemViewModel: ObservableObject {
                             }
                         }
                         if !strings.isEmpty {
+                            pb.clearContents()
                             pb.setString(strings.joined(separator: "\n"), forType: .string)
                         }
                     }
@@ -746,16 +727,20 @@ final class ShelfItemViewModel: ObservableObject {
             
             case "Compress":
                 let selected = ShelfSelectionModel.shared.selectedItems(in: ShelfStateViewModel.shared.items)
-                let fileURLs = selected.compactMap { ShelfStateViewModel.shared.resolvedFileURL(for: $0) }
-                guard !fileURLs.isEmpty else { break }
-
                 Task {
+                    let fileURLs = await ShelfStateViewModel.shared.resolvedFileURLs(for: selected, refresh: true)
+                    guard !fileURLs.isEmpty else { return }
+
                     // Create ZIP in a temporary location while holding access to selected resources
                     if let zipTempURL = await fileURLs.accessSecurityScopedResources(accessor: { urls in
                         await TemporaryFileStorageService.shared.createZip(from: urls)
                     }) {
                         if let bookmark = try? Bookmark(url: zipTempURL) {
-                            let newItem = ShelfItem(kind: .file(bookmark: bookmark.data), isTemporary: true)
+                            let newItem = ShelfItem(
+                                kind: .file(bookmark: bookmark.data),
+                                isTemporary: true,
+                                fileIdentity: ShelfItem.fileIdentity(for: zipTempURL)
+                            )
                             ShelfStateViewModel.shared.add([newItem])
                         } else {
                             // Fallback: reveal the temporary file in Finder
@@ -774,9 +759,10 @@ final class ShelfItemViewModel: ObservableObject {
             // Support both file items and link items
             let targetURL: URL?
             let needsSecurityScope: Bool
+            let resolvedFile = ShelfStateViewModel.shared.resolvedFile(for: item)
             
-            if let fileURL = ShelfStateViewModel.shared.resolvedFileURL(for: item) {
-                targetURL = fileURL
+            if let resolvedFile {
+                targetURL = resolvedFile.url
                 needsSecurityScope = true
             } else if case .link(let url) = item.kind {
                 targetURL = url
@@ -803,7 +789,8 @@ final class ShelfItemViewModel: ObservableObject {
             // Compute recommended applications for the selected target
             let recommendedApps: Set<URL> = {
                 let apps: [URL]
-                if let uti = (try? fileURL.resourceValues(forKeys: [.contentTypeKey]))?.contentType {
+                if let identifier = resolvedFile?.contentTypeIdentifier,
+                   let uti = UTType(identifier) {
                     apps = NSWorkspace.shared.urlsForApplications(toOpen: uti)
                 } else {
                     apps = NSWorkspace.shared.urlsForApplications(toOpen: fileURL)
@@ -909,9 +896,9 @@ final class ShelfItemViewModel: ObservableObject {
                         do {
                             let config = NSWorkspace.OpenConfiguration()
                             if alwaysCheckbox.state == .on, let bundleID = Bundle(url: appURL)?.bundleIdentifier {
-                                if let contentType = (try? fileURL.resourceValues(forKeys: [.contentTypeKey]))?.contentType {
-                                    let status = LSSetDefaultRoleHandlerForContentType(contentType.identifier as CFString, LSRolesMask.all, bundleID as CFString)
-                                    if status != noErr { print("⚠️ Failed to set default handler for \(contentType.identifier): \(status)") }
+                                if let contentTypeIdentifier = resolvedFile?.contentTypeIdentifier {
+                                    let status = LSSetDefaultRoleHandlerForContentType(contentTypeIdentifier as CFString, LSRolesMask.all, bundleID as CFString)
+                                    if status != noErr { print("⚠️ Failed to set default handler for \(contentTypeIdentifier): \(status)") }
                                 } else if let scheme = fileURL.scheme {
                                     let status = LSSetDefaultHandlerForURLScheme(scheme as CFString, bundleID as CFString)
                                     if status != noErr { print("⚠️ Failed to set default handler for scheme \(scheme): \(status)") }
@@ -940,7 +927,7 @@ final class ShelfItemViewModel: ObservableObject {
         private func showRenameDialog(for item: ShelfItem) {
             guard case .file = item.kind else { return }
             Task {
-                if let fileURL = ShelfStateViewModel.shared.resolvedFileURL(for: item) {
+                if let fileURL = await ShelfStateViewModel.shared.resolveFile(for: item, refresh: true)?.url {
                     // Start security-scoped access and keep it active until rename completes.
                     let didStart = fileURL.startAccessingSecurityScopedResource()
 
@@ -958,7 +945,7 @@ final class ShelfItemViewModel: ObservableObject {
                                     try FileManager.default.moveItem(at: fileURL, to: newURL)
 
                                     if let newBookmark = try? Bookmark(url: newURL) {
-                                        self.viewModel?.replaceBookmarkAfterRename(newBookmark.data)
+                                        self.viewModel?.replaceBookmarkAfterRename(newBookmark.data, url: newURL)
                                     }
                                 } catch {
                                     print("❌ Failed to rename file: \(error.localizedDescription)")
@@ -976,11 +963,13 @@ final class ShelfItemViewModel: ObservableObject {
         @MainActor
         private func handleRemoveBackground() {
             let selected = ShelfSelectionModel.shared.selectedItems(in: ShelfStateViewModel.shared.items)
-            let imageURLs = selected.compactMap { ShelfStateViewModel.shared.resolvedFileURL(for: $0) }.filter { ImageProcessingService.shared.isImageFile($0) }
-            
-            guard let imageURL = imageURLs.first else { return }
-            
             Task {
+                let imageURLs = await ShelfStateViewModel.shared
+                    .resolvedFiles(for: selected, refresh: true)
+                    .filter(ShelfItemViewModel.isImageFile)
+                    .map(\.url)
+                guard let imageURL = imageURLs.first else { return }
+
                 do {
                     let resultURL = try await imageURL.accessSecurityScopedResource { url in
                         try await ImageProcessingService.shared.removeBackground(from: url)
@@ -991,7 +980,8 @@ final class ShelfItemViewModel: ObservableObject {
                         if let bookmark = try? Bookmark(url: resultURL) {
                             let newItem = ShelfItem(
                                 kind: .file(bookmark: bookmark.data),
-                                isTemporary: true
+                                isTemporary: true,
+                                fileIdentity: ShelfItem.fileIdentity(for: resultURL)
                             )
                             ShelfStateViewModel.shared.add([newItem])
                         }
@@ -1006,11 +996,13 @@ final class ShelfItemViewModel: ObservableObject {
         @MainActor
         private func handleCreatePDF() {
             let selected = ShelfSelectionModel.shared.selectedItems(in: ShelfStateViewModel.shared.items)
-            let imageURLs = selected.compactMap { ShelfStateViewModel.shared.resolvedFileURL(for: $0) }.filter { ImageProcessingService.shared.isImageFile($0) }
-            
-            guard !imageURLs.isEmpty else { return }
-            
             Task {
+                let imageURLs = await ShelfStateViewModel.shared
+                    .resolvedFiles(for: selected, refresh: true)
+                    .filter(ShelfItemViewModel.isImageFile)
+                    .map(\.url)
+                guard !imageURLs.isEmpty else { return }
+
                 do {
                     let resultURL = try await imageURLs.accessSecurityScopedResources { urls in
                         try await ImageProcessingService.shared.createPDF(from: urls)
@@ -1021,7 +1013,8 @@ final class ShelfItemViewModel: ObservableObject {
                         if let bookmark = try? Bookmark(url: resultURL) {
                             let newItem = ShelfItem(
                                 kind: .file(bookmark: bookmark.data),
-                                isTemporary: true
+                                isTemporary: true,
+                                fileIdentity: ShelfItem.fileIdentity(for: resultURL)
                             )
                             ShelfStateViewModel.shared.add([newItem])
                         }
@@ -1036,10 +1029,18 @@ final class ShelfItemViewModel: ObservableObject {
         @MainActor
         private func showConvertImageDialog() {
             let selected = ShelfSelectionModel.shared.selectedItems(in: ShelfStateViewModel.shared.items)
-            let imageURLs = selected.compactMap { ShelfStateViewModel.shared.resolvedFileURL(for: $0) }.filter { ImageProcessingService.shared.isImageFile($0) }
-            
-            guard let imageURL = imageURLs.first else { return }
-            
+            Task {
+                let imageURLs = await ShelfStateViewModel.shared
+                    .resolvedFiles(for: selected, refresh: true)
+                    .filter(ShelfItemViewModel.isImageFile)
+                    .map(\.url)
+                guard let imageURL = imageURLs.first else { return }
+                showConvertImageDialog(for: imageURL)
+            }
+        }
+
+        @MainActor
+        private func showConvertImageDialog(for imageURL: URL) {
             // Create and show conversion options dialog with better layout
             let alert = NSAlert()
             alert.messageText = "Convert Image"
@@ -1229,7 +1230,8 @@ final class ShelfItemViewModel: ObservableObject {
                             if let bookmark = try? Bookmark(url: resultURL) {
                                 let newItem = ShelfItem(
                                     kind: .file(bookmark: bookmark.data),
-                                    isTemporary: true
+                                    isTemporary: true,
+                                    fileIdentity: ShelfItem.fileIdentity(for: resultURL)
                                 )
                                 ShelfStateViewModel.shared.add([newItem])
                             }
