@@ -111,11 +111,16 @@ final class ShelfItemViewModel: ObservableObject {
         thumbnail = nil
 
         let generation = fileResolutionState.begin()
+        let resolutionItem = item
+        let pendingToken = ShelfStateViewModel.shared.prefetchFileResolution(
+            for: resolutionItem,
+            refresh: refresh,
+            restartPending: restartPending
+        )
         resolutionTask = Task { [weak self] in
             let resolvedFile = await ShelfStateViewModel.shared.resolveFile(
-                for: item,
-                refresh: refresh,
-                restartPending: restartPending
+                for: resolutionItem,
+                refresh: false
             )
             guard !Task.isCancelled,
                   let self,
@@ -135,8 +140,18 @@ final class ShelfItemViewModel: ObservableObject {
         let timeout = resolutionTimeout
         timeoutTask = Task { [weak self] in
             try? await Task.sleep(for: timeout)
-            guard !Task.isCancelled else { return }
-            self?.fileResolutionState.timeOut(generation: generation)
+            guard !Task.isCancelled,
+                  let self,
+                  self.fileResolutionState.timeOut(generation: generation) else {
+                return
+            }
+            if let pendingToken {
+                ShelfStateViewModel.shared.invalidatePendingResolution(
+                    for: resolutionItem.id,
+                    bookmarkData: bookmarkData,
+                    token: pendingToken
+                )
+            }
         }
     }
 

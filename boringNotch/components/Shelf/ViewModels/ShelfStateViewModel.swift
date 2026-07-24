@@ -133,28 +133,54 @@ final class ShelfStateViewModel: ObservableObject {
 
     func prefetchFileResolution(for items: [ShelfItem], refresh: Bool = false) {
         for item in items {
-            let currentItem = self.items.first(where: { $0.id == item.id }) ?? item
-            guard case .file(let bookmarkData) = currentItem.kind else { continue }
-            if !refresh,
-               let cached = cachedFileResolutions[item.id],
-               cached.bookmarkData == bookmarkData {
-                continue
-            }
-
-            let pending = pendingResolution(
-                for: item.id,
-                bookmarkData: bookmarkData
-            )
-            Task { [weak self] in
-                let file = await pending.task.value
-                self?.applyResolution(
-                    file,
-                    for: item.id,
-                    bookmarkData: bookmarkData,
-                    token: pending.token
-                )
-            }
+            prefetchFileResolution(for: item, refresh: refresh)
         }
+    }
+
+    @discardableResult
+    func prefetchFileResolution(
+        for item: ShelfItem,
+        refresh: Bool = false,
+        restartPending: Bool = false
+    ) -> UUID? {
+        let currentItem = items.first(where: { $0.id == item.id }) ?? item
+        guard case .file(let bookmarkData) = currentItem.kind else { return nil }
+        if !refresh,
+           let cached = cachedFileResolutions[item.id],
+           cached.bookmarkData == bookmarkData {
+            return nil
+        }
+
+        let pending = pendingResolution(
+            for: item.id,
+            bookmarkData: bookmarkData,
+            restart: restartPending
+        )
+        Task { [weak self] in
+            let file = await pending.task.value
+            self?.applyResolution(
+                file,
+                for: item.id,
+                bookmarkData: bookmarkData,
+                token: pending.token
+            )
+        }
+        return pending.token
+    }
+
+    func invalidatePendingResolution(
+        for itemID: UUID,
+        bookmarkData: Data,
+        token: UUID
+    ) {
+        guard let pending = pendingFileResolutions[itemID],
+              pending.bookmarkData == bookmarkData,
+              pending.token == token else {
+            return
+        }
+
+        pendingFileResolutions[itemID] = nil
+        pending.task.cancel()
     }
 
     func resolvedFilesByItemID(
