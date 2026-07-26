@@ -62,18 +62,78 @@ struct ShelfFileResolutionState: Sendable {
     }
 }
 
+private final class ShelfBookmarkResolutionExecutor: @unchecked Sendable {
+    static let shared = ShelfBookmarkResolutionExecutor(maxConcurrentOperationCount: 2)
+
+    private let queue: OperationQueue
+
+    init(maxConcurrentOperationCount: Int) {
+        queue = OperationQueue()
+        queue.name = "com.boringnotch.shelf-bookmark-resolution"
+        queue.qualityOfService = .utility
+        queue.maxConcurrentOperationCount = maxConcurrentOperationCount
+    }
+
+    func execute<Value: Sendable>(_ operation: @escaping @Sendable () -> Value) async -> Value {
+        await withCheckedContinuation { continuation in
+            queue.addOperation {
+                continuation.resume(returning: operation())
+            }
+        }
+    }
+}
+
+private actor ShelfBookmarkResolutionRegistry {
+    private struct InFlightResolution {
+        let token: UUID
+        let task: Task<ResolvedShelfFile?, Never>
+    }
+
+    private let executor: ShelfBookmarkResolutionExecutor
+    private var inFlightResolutions: [Data: InFlightResolution] = [:]
+
+    init(executor: ShelfBookmarkResolutionExecutor = .shared) {
+        self.executor = executor
+    }
+
+    func resolve(
+        _ data: Data,
+        using resolution: @escaping @Sendable (Data) -> ResolvedShelfFile?
+    ) async -> ResolvedShelfFile? {
+        let inFlightResolution: InFlightResolution
+        if let existingResolution = inFlightResolutions[data] {
+            inFlightResolution = existingResolution
+        } else {
+            let token = UUID()
+            let executor = self.executor
+            let task = Task<ResolvedShelfFile?, Never> {
+                await executor.execute {
+                    resolution(data)
+                }
+            }
+            inFlightResolution = InFlightResolution(token: token, task: task)
+            inFlightResolutions[data] = inFlightResolution
+        }
+
+        let result = await inFlightResolution.task.value
+        if inFlightResolutions[data]?.token == inFlightResolution.token {
+            inFlightResolutions[data] = nil
+        }
+        return result
+    }
+}
+
 struct ShelfBookmarkResolver: Sendable {
     private let resolution: @Sendable (Data) -> ResolvedShelfFile?
+    private let registry: ShelfBookmarkResolutionRegistry
 
     init(resolution: @escaping @Sendable (Data) -> ResolvedShelfFile?) {
         self.resolution = resolution
+        self.registry = ShelfBookmarkResolutionRegistry()
     }
 
     func resolve(_ data: Data) async -> ResolvedShelfFile? {
-        let resolution = self.resolution
-        return await Task.detached(priority: .utility) {
-            resolution(data)
-        }.value
+        await registry.resolve(data, using: resolution)
     }
 }
 
@@ -155,16 +215,18 @@ extension ShelfBookmarkResolver {
     static let live = ShelfBookmarkResolver { bookmarkData in
         let result = Bookmark(data: bookmarkData).resolve()
         guard let url = result.url else { return nil }
-        let resourceValues = try? url.resourceValues(
-            forKeys: [.contentTypeKey, .isDirectoryKey, .localizedNameKey]
-        )
-        return ResolvedShelfFile(
-            url: url,
-            refreshedBookmarkData: result.refreshedData,
-            displayName: shelfDisplayName(for: url, localizedName: resourceValues?.localizedName),
-            isDirectory: resourceValues?.isDirectory ?? false,
-            contentTypeIdentifier: resourceValues?.contentType?.identifier
-        )
+        return url.accessSecurityScopedResource { url in
+            let resourceValues = try? url.resourceValues(
+                forKeys: [.contentTypeKey, .isDirectoryKey, .localizedNameKey]
+            )
+            return ResolvedShelfFile(
+                url: url,
+                refreshedBookmarkData: result.refreshedData,
+                displayName: shelfDisplayName(for: url, localizedName: resourceValues?.localizedName),
+                isDirectory: resourceValues?.isDirectory ?? false,
+                contentTypeIdentifier: resourceValues?.contentType?.identifier
+            )
+        }
     }
 }
 

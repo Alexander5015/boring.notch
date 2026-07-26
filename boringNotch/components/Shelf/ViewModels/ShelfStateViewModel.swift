@@ -109,13 +109,17 @@ final class ShelfStateViewModel: ObservableObject {
         refresh: Bool = false,
         restartPending: Bool = false
     ) async -> ResolvedShelfFile? {
-        let currentItem = items.first(where: { $0.id == item.id }) ?? item
-        guard case .file(let bookmarkData) = currentItem.kind else { return nil }
+        guard let bookmarkData = bookmarkData(for: item) else { return nil }
 
-        if !refresh,
-           let cached = cachedFileResolutions[item.id],
-           cached.bookmarkData == bookmarkData {
-            return cached.file
+        if let cached = cachedFile(for: item.id, matching: bookmarkData) {
+            if refresh {
+                prefetchFileResolution(
+                    for: item,
+                    refresh: true,
+                    restartPending: restartPending
+                )
+            }
+            return cached
         }
 
         let pending = pendingResolution(
@@ -143,12 +147,16 @@ final class ShelfStateViewModel: ObservableObject {
         refresh: Bool = false,
         restartPending: Bool = false
     ) -> UUID? {
-        let currentItem = items.first(where: { $0.id == item.id }) ?? item
-        guard case .file(let bookmarkData) = currentItem.kind else { return nil }
+        guard let bookmarkData = bookmarkData(for: item) else { return nil }
         if !refresh,
-           let cached = cachedFileResolutions[item.id],
-           cached.bookmarkData == bookmarkData {
+           cachedFile(for: item.id, matching: bookmarkData) != nil {
             return nil
+        }
+
+        if !restartPending,
+           let pending = pendingFileResolutions[item.id],
+           pending.bookmarkData == bookmarkData {
+            return pending.token
         }
 
         let pending = pendingResolution(
@@ -195,20 +203,25 @@ final class ShelfStateViewModel: ObservableObject {
         guard !fileItems.isEmpty else { return [:] }
 
         prefetchFileResolution(for: fileItems, refresh: refresh)
-        let itemIDs = Set(fileItems.map(\.id))
+        let uncachedItemIDs: Set<UUID> = Set(fileItems.compactMap { item -> UUID? in
+            guard let bookmarkData = bookmarkData(for: item) else { return nil }
+            return cachedFile(for: item.id, matching: bookmarkData) == nil ? item.id : nil
+        })
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: timeout)
 
         while !Task.isCancelled,
               clock.now < deadline,
-              pendingFileResolutions.keys.contains(where: itemIDs.contains) {
+              pendingFileResolutions.keys.contains(where: uncachedItemIDs.contains) {
             try? await Task.sleep(for: .milliseconds(25))
         }
 
         guard !Task.isCancelled else { return [:] }
         return Dictionary(uniqueKeysWithValues: fileItems.compactMap { item in
-            guard pendingFileResolutions[item.id] == nil else { return nil }
-            guard let file = cachedFileResolutions[item.id]?.file else { return nil }
+            guard let bookmarkData = bookmarkData(for: item),
+                  let file = cachedFile(for: item.id, matching: bookmarkData) else {
+                return nil
+            }
             return (item.id, file)
         })
     }
@@ -254,6 +267,20 @@ final class ShelfStateViewModel: ObservableObject {
         )
         pendingFileResolutions[itemID] = pending
         return pending
+    }
+
+    private func bookmarkData(for item: ShelfItem) -> Data? {
+        let currentItem = items.first(where: { $0.id == item.id }) ?? item
+        guard case .file(let bookmarkData) = currentItem.kind else { return nil }
+        return bookmarkData
+    }
+
+    private func cachedFile(for itemID: UUID, matching bookmarkData: Data) -> ResolvedShelfFile? {
+        guard let cached = cachedFileResolutions[itemID],
+              cached.bookmarkData == bookmarkData else {
+            return nil
+        }
+        return cached.file
     }
 
     func updateBookmark(for item: ShelfItem, bookmark: Data, resolvedURL: URL? = nil) {
