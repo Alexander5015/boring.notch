@@ -124,6 +124,28 @@ Feature requests are welcome! Please:
 - Explain why this feature would be valuable to users
 - Be open to discussion and alternative approaches
 
+## SkyLight / lock-screen development constraint (macOS 27+)
+
+The lock-screen surface delegates its panel into a WindowServer space via the
+SkyLight private framework (`SLSSpaceAddWindowsAndRemoveFromSpaces`). On
+macOS 27, WindowServer accepts that call **only for certain build contexts**:
+
+- a linked SDK older than 27 (`LC_BUILD_VERSION`), **and**
+- a real Developer ID signature (ad-hoc signatures are refused with
+  `kCGErrorInvalidConnection`), and/or accumulated TCC grants.
+
+Consequence: **Debug builds made with an Xcode whose SDK is 27 cannot test
+lock-screen behavior locally.** Verified options:
+
+- Build through CI (`manual_build.yml` pins Xcode 26.6 and applies the team
+  certificate — its artifacts carry the working context), or
+- install Xcode 26.x alongside and select it for this project.
+
+A locally ad-hoc-signed 27-SDK build compiles and runs fine; only the
+SkyLight delegation silently fails. The settings page surfaces the actual
+delegation result ("Lock-screen surface: …") via `SkyLightDelegationStatus`.
+Full evidence: `investigations/lock-screen-skyview/FINDINGS.md`.
+
 ## Getting Help
 
 If you need help or have questions:

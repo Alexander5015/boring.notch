@@ -1,0 +1,5 @@
+lock-probe
+lock-probe-oldsdk
+helper-window
+Probe.app/
+*.o
