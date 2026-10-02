@@ -1,11 +1,13 @@
 
 import AppKit
+import CoreServices
 import Foundation
 
 enum InstallFailure: Error, LocalizedError {
     case badArchive
     case notAnExtension(expected: String, found: String)
     case signatureInvalid(String)
+    case launchServicesRefused(OSStatus, URL)
     case toolFailed(String, String)
     case timedOut(String)
     case notIndexed(String)
@@ -13,19 +15,22 @@ enum InstallFailure: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .badArchive:
-            "The download could not be opened as an extension package."
+            return "The download could not be opened as an extension package."
         case .notAnExtension(let expected, let found):
-            found == "none"
+            return found == "none"
                 ? "That package contains no app extension. It is built for a different kind of host."
                 : "That package is built for \(found), not for \(expected)."
         case .signatureInvalid(let why):
-            "The package is not correctly signed: \(why)"
+            return "The package is not correctly signed: \(why)"
+        case .launchServicesRefused(let status, let url):
+            let reason = SecCopyErrorMessageString(status, nil) as String? ?? "unknown error"
+            return "macOS refused to register \(url.lastPathComponent): \(reason) (\(status))"
         case .toolFailed(let tool, let why):
-            "\(tool) failed: \(why)"
+            return "\(tool) failed: \(why)"
         case .timedOut(let tool):
-            "\(tool) did not respond in time."
+            return "\(tool) did not respond in time."
         case .notIndexed(let bundleID):
-            "The system did not register \(bundleID). It may need approval in System Settings."
+            return "The system did not register \(bundleID). It may need approval in System Settings."
         }
     }
 }
@@ -157,17 +162,23 @@ enum ExtensionInstaller {
     }
 
     private static func register(_ provider: URL) throws {
-        let lsresult = Tool.run(lsregister, ["-f", provider.path])
-        if lsresult.timedOut { throw InstallFailure.timedOut("lsregister") }
+        let status = LSRegisterURL(provider as CFURL, true)
+        guard status == noErr else { throw InstallFailure.launchServicesRefused(status, provider) }
 
-        guard let appex = try firstExtensionBundle(in: provider) else {
-            throw InstallFailure.notAnExtension(expected: "", found: "none")
+        for appex in embeddedExtensions(of: provider) {
+            let result = Tool.run("/usr/bin/pluginkit", ["-a", appex.path])
+            if result.timedOut { throw InstallFailure.timedOut("pluginkit") }
+            guard result.succeeded else {
+                throw InstallFailure.toolFailed("pluginkit", result.err)
+            }
         }
-        let pkresult = Tool.run("/usr/bin/pluginkit", ["-a", appex.path])
-        if pkresult.timedOut { throw InstallFailure.timedOut("pluginkit") }
-        guard pkresult.succeeded else {
-            throw InstallFailure.toolFailed("pluginkit", pkresult.err)
-        }
+    }
+
+    static func embeddedExtensions(of provider: URL) -> [URL] {
+        let directory = provider.appendingPathComponent("Contents/Extensions", isDirectory: true)
+        let contents = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        return contents.filter { $0.hasSuffix(".appex") }
+            .map { directory.appendingPathComponent($0) }
     }
 
     private static func awaitIndexed(_ bundleID: String, inside provider: URL) throws {
