@@ -6,6 +6,7 @@
 //
 
 import Defaults
+import NotchTabHost
 import SwiftUI
 
 struct BoringHeader: View {
@@ -13,11 +14,12 @@ struct BoringHeader: View {
     @ObservedObject var batteryModel = BatteryStatusViewModel.shared
     @ObservedObject var coordinator = BoringViewCoordinator.shared
     @StateObject var shelfState = ShelfStateViewModel.shared
+    @Environment(NotchTabRegistry.self) var registry
     var body: some View {
         HStack(spacing: 0) {
             HStack {
                 if (!shelfState.isEmpty || coordinator.alwaysShowTabs) && Defaults[.boringShelf] {
-                    TabSelectionView()
+                    TabSelectionView(registry: registry)
                 } else if vm.notchState == .open {
                     EmptyView()
                 }

@@ -18,9 +18,11 @@ enum NotchState {
     case open
 }
 
-enum NotchViews {
+enum NotchViews: Equatable {
     case home
     case shelf
+
+    case extensionTab(bundleID: String)
 }
 
 enum DownloadIndicatorStyle: String, Defaults.Serializable {

@@ -5,6 +5,7 @@
 //  Created by Hugo Persson on 2024-08-25.
 //
 
+import NotchTabHost
 import SwiftUI
 
 struct TabModel: Identifiable {
@@ -14,17 +15,29 @@ struct TabModel: Identifiable {
     let view: NotchViews
 }
 
-let tabs = [
-    TabModel(label: "Home", icon: "house.fill", view: .home),
-    TabModel(label: "Shelf", icon: "tray.fill", view: .shelf)
-]
+func builtInTabs() -> [TabModel] {
+    [
+        TabModel(label: "Home", icon: "house.fill", view: .home),
+        TabModel(label: "Shelf", icon: "tray.fill", view: .shelf)
+    ]
+}
+
+@MainActor
+func extensionTabs(_ registry: NotchTabRegistry) -> [TabModel] {
+    registry.tabs.map {
+        TabModel(label: $0.label, icon: $0.icon, view: .extensionTab(bundleID: $0.bundleID))
+    }
+}
 
 struct TabSelectionView: View {
     @ObservedObject var coordinator = BoringViewCoordinator.shared
     @Namespace var animation
+
+    var registry: NotchTabRegistry
+
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(tabs) { tab in
+            ForEach(builtInTabs() + extensionTabs(registry)) { tab in
                     TabButton(label: tab.label, icon: tab.icon, selected: coordinator.currentView == tab.view) {
                         withAnimation(.smooth) {
                             coordinator.currentView = tab.view

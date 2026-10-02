@@ -10,12 +10,14 @@ import AVFoundation
 import Combine
 import Defaults
 import KeyboardShortcuts
+import NotchTabHost
 import SwiftUI
 import SwiftUIIntrospect
 
 @MainActor
 struct ContentView: View {
     @EnvironmentObject var vm: BoringViewModel
+    @Environment(NotchTabRegistry.self) var registry
     @ObservedObject var coordinator = BoringViewCoordinator.shared
     @ObservedObject var musicManager = MusicManager.shared
     @ObservedObject var batteryModel = BatteryStatusViewModel.shared
@@ -580,6 +582,17 @@ struct ContentView: View {
                                 dropInteraction: vm.dropInteraction,
                                 animation: vm.animation
                             )
+                        case .extensionTab(let bundleID):
+                            if let tab = registry.tabs.first(where: { $0.bundleID == bundleID }) {
+                                NotchTabHost(identity: tab.identity)
+                                    .ignoresSafeArea(.container, edges: .all)
+                            } else {
+                                ContentUnavailableView(
+                                    "This extension is no longer available.",
+                                    systemImage: "questionmark.circle",
+                                    description: Text(bundleID)
+                                )
+                            }
                         }
                     }
                 }

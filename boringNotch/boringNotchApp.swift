@@ -7,6 +7,7 @@
 
 import AVFoundation
 import Defaults
+import NotchTabHost
 import KeyboardShortcuts
 import Sparkle
 import SwiftUI
@@ -63,6 +64,9 @@ struct DynamicNotchApp: App {
 
         // Initialize the settings window controller with the updater controller
         SettingsWindowController.shared.setUpdaterController(updaterController)
+
+        //
+        NotchTabRegistry.shared.start()
 
         let updaterController = self.updaterController
         Task { @MainActor in

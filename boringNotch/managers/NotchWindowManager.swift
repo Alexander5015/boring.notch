@@ -10,6 +10,7 @@
 //
 
 import Defaults
+import NotchTabHost
 import SwiftUI
 
 @MainActor
@@ -143,6 +144,7 @@ final class NotchWindowManager {
         window.contentView = NSHostingView(
             rootView: ContentView()
                 .environmentObject(viewModel)
+                .environment(NotchTabRegistry.shared)
         )
 
         window.orderFrontRegardless()
