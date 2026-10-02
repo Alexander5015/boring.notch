@@ -60,6 +60,21 @@ final class BNLunarBrightnessEvent: NSObject, NSSecureCoding {
     func startNotificationWatching(with reply: @escaping (Bool) -> Void)
     func stopNotificationWatching()
     func setNotificationFilter(_ bundleIDs: [String], allApps: Bool)
+
+    //
+
+    func installExtension(
+        archive: Data,
+        appName: String,
+        expectedExtensionPoint: String,
+        with reply: @escaping (String?, String?, String?) -> Void
+    )
+
+    func uninstallExtension(atPath: String, with reply: @escaping (String?) -> Void)
+
+    func installedExtensionBundleIDs(with reply: @escaping ([String]) -> Void)
+
+    func installedExtensionPaths(with reply: @escaping ([String]) -> Void)
 }
 
 @objc protocol BoringNotchXPCHelperDelegate {

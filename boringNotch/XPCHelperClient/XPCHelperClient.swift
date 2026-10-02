@@ -45,6 +45,11 @@ final class XPCHelperClient: NSObject, ObservableObject {
 
     // MARK: - Connection Management (Main Actor Isolated)
 
+    @MainActor
+    func extensionService() -> RemoteXPCService<BoringNotchXPCHelperProtocol> {
+        ensureRemoteService()
+    }
+
     private func ensureRemoteService() -> RemoteXPCService<BoringNotchXPCHelperProtocol> {
         // Always reuse a live connection — never tear one down to attach a
         // listener. The exported object below serves *both* callback

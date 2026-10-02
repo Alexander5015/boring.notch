@@ -512,3 +512,43 @@ private struct LunarBrightnessEvent: Decodable, Sendable {
     let brightness: Double
     let display: Int
 }
+
+extension BoringNotchXPCHelper {
+
+    @objc func installExtension(
+        archive: Data,
+        appName: String,
+        expectedExtensionPoint: String,
+        with reply: @escaping (String?, String?, String?) -> Void
+    ) {
+        do {
+            let installed = try ExtensionInstaller.install(
+                archive: archive,
+                appName: appName,
+                expectedExtensionPoint: expectedExtensionPoint)
+            reply(installed.providerPath, installed.extensionBundleID, installed.note)
+        } catch {
+            NSLog("BoringNotchInstall: failed: %@", error.localizedDescription)
+            reply(nil, nil, error.localizedDescription)
+        }
+    }
+
+    @objc func uninstallExtension(atPath: String, with reply: @escaping (String?) -> Void) {
+        do {
+            try ExtensionInstaller.uninstall(providerAt: atPath)
+            reply(nil)
+        } catch {
+            NSLog("BoringNotchInstall: uninstall failed: %@", error.localizedDescription)
+            reply(error.localizedDescription)
+        }
+    }
+
+    @objc func installedExtensionBundleIDs(with reply: @escaping ([String]) -> Void) {
+        reply(ExtensionInstaller.installedExtensionBundleIDs())
+    }
+
+    @objc func installedExtensionPaths(with reply: @escaping ([String]) -> Void) {
+        let ids = ExtensionInstaller.installedExtensionBundleIDs()
+        reply(ids.flatMap { ExtensionInstaller.registeredPaths(for: $0) })
+    }
+}

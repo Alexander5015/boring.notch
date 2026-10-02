@@ -49,6 +49,15 @@ struct DynamicNotchApp: App {
     @Default(.menubarIcon) var showMenuBarIcon
     @Environment(\.openWindow) var openWindow
 
+    static let pendingInstallSpec: (url: URL, sha256: String, appName: String)? = {
+        let arguments = CommandLine.arguments
+        guard let flag = arguments.firstIndex(of: "--tmp-install-extension"),
+              flag + 3 < arguments.count,
+              let url = URL(string: arguments[flag + 1])
+        else { return nil }
+        return (url, arguments[flag + 2], arguments[flag + 3])
+    }()
+
     private let sparkleUpdaterDelegate: BoringSparkleUpdaterDelegate
     let updaterController: SPUStandardUpdaterController
 
@@ -67,6 +76,19 @@ struct DynamicNotchApp: App {
 
         //
         NotchTabRegistry.shared.start()
+
+        if let spec = Self.pendingInstallSpec {
+            Task { @MainActor in
+                do {
+                    let installed = try await ExtensionInstallClient(helper: XPCHelperClient.shared)
+                        .install(from: spec.url, expectedSHA256: spec.sha256, appName: spec.appName)
+                    NSLog("BNKLDIAG installed provider=%@ extension=%@",
+                          installed.providerPath, installed.extensionBundleID)
+                } catch {
+                    NSLog("BNKLDIAG install failed: %@", error.localizedDescription)
+                }
+            }
+        }
 
         let updaterController = self.updaterController
         Task { @MainActor in
