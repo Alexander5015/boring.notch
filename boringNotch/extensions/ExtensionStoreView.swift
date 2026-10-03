@@ -161,7 +161,21 @@ struct ExtensionStoreView: View {
                 button("Retry", entry)
             }
         case nil:
-            button(model.isInstalled(entry) ? "Reinstall" : "Install", entry)
+            if model.isInstalled(entry) {
+                HStack(spacing: 8) {
+                    Label("Installed", systemImage: "checkmark.circle.fill")
+                        .labelStyle(.titleAndIcon)
+                        .foregroundStyle(.green)
+                        .font(.callout)
+                    Button("Reinstall") {
+                        Task { await model.install(entry) }
+                    }
+                    .buttonStyle(.link)
+                    .font(.caption)
+                }
+            } else {
+                button("Install", entry)
+            }
         }
     }
 
