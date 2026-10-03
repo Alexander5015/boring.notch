@@ -33,8 +33,12 @@ final class ExtensionStoreModel {
         await refreshInstalled()
         do {
             entries = try await catalog.load()
-            if CommandLine.arguments.contains("--tmp-store-uninstall") {
-                Task { @MainActor in if let first = entries.first { await uninstall(first) } }
+            if let wanted = ExtensionStoreView.storeUninstallTarget {
+                Task { @MainActor in
+                    if let entry = entries.first(where: { $0.id == wanted }) {
+                        await uninstall(entry)
+                    }
+                }
             }
             if CommandLine.arguments.contains("--tmp-store-install") {
                 Task { @MainActor in if let first = entries.first { await install(first) } }
@@ -82,7 +86,10 @@ final class ExtensionStoreModel {
             working[entry.id] = nil
             installedPacks.remove(entry.id)
         } catch {
-            working[entry.id] = .failed(error.localizedDescription)
+            await refreshInstalled()
+            if installedPacks.contains(entry.id) {
+                working[entry.id] = .failed(error.localizedDescription)
+            }
         }
     }
 
@@ -93,6 +100,13 @@ final class ExtensionStoreModel {
 }
 
 struct ExtensionStoreView: View {
+    static var storeUninstallTarget: String? {
+        let arguments = CommandLine.arguments
+        guard let flag = arguments.firstIndex(of: "--tmp-store-uninstall"),
+              flag + 1 < arguments.count else { return nil }
+        return arguments[flag + 1]
+    }
+
     @State private var model = ExtensionStoreModel()
     @State private var showingApproval = false
 
