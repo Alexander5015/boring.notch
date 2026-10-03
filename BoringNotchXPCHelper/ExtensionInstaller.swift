@@ -220,26 +220,12 @@ enum ExtensionInstaller {
         guard result.succeeded else { return [] }
         return result.out
             .split(separator: "\n")
-            .compactMap { line in
-                line.split(separator: "\t").last.map(String.init)
+            .compactMap { line -> String? in
+                guard let path = line.split(separator: "\t").last,
+                      path.hasPrefix("/") else { return nil }
+                return String(path)
             }
             .filter { !$0.isEmpty }
-    }
-
-    @discardableResult
-    static func pruneForeignRecords(forExtensionBundleIDs identifiers: [String]) -> [String] {
-        let root = installRoot.standardizedFileURL.path
-        var removed: [String] = []
-        for identifier in identifiers {
-            for path in registeredPaths(for: identifier) {
-                let normalised = URL(fileURLWithPath: path).standardizedFileURL.path
-                guard !normalised.hasPrefix(root + "/") else { continue }
-                if Tool.run("/usr/bin/pluginkit", ["-r", normalised]).succeeded {
-                    removed.append(normalised)
-                }
-            }
-        }
-        return removed
     }
 
     static func providerPath(forExtensionBundleID bundleID: String) -> String? {
@@ -248,7 +234,6 @@ enum ExtensionInstaller {
             at: installRoot, includingPropertiesForKeys: nil,
             options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants])
         else { return nil }
-
         var candidates: [URL] = []
         for directory in providers {
             guard let apps = try? fileManager.contentsOfDirectory(
@@ -258,13 +243,28 @@ enum ExtensionInstaller {
             candidates.append(contentsOf: apps.filter { $0.pathExtension == "app" })
         }
         candidates.append(contentsOf: providers.filter { $0.pathExtension == "app" })
-
         for provider in candidates {
             guard let appex = try? firstExtensionBundle(in: provider),
                   Bundle(url: appex)?.bundleIdentifier == bundleID else { continue }
             return provider.path
         }
         return nil
+    }
+
+    @discardableResult
+    static func pruneForeignRecords(forExtensionBundleIDs identifiers: [String]) -> [String] {
+        let root = installRoot.standardizedFileURL.path
+        var removed: [String] = []
+        for identifier in identifiers {
+            for path in registeredPaths(for: identifier) {
+                let normalised = URL(fileURLWithPath: path).standardizedFileURL.path
+                guard !normalised.lowercased().hasPrefix(root.lowercased() + "/") else { continue }
+                if Tool.run("/usr/bin/pluginkit", ["-r", normalised]).succeeded {
+                    removed.append(normalised)
+                }
+            }
+        }
+        return removed
     }
 
     static func isRegistered(_ bundleID: String) -> Bool {

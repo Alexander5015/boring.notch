@@ -13,6 +13,8 @@ final class ExtensionStoreModel {
 
     private(set) var working: [String: Progress] = [:]
 
+    private(set) var uninstalling: Set<String> = []
+
     enum Progress: Equatable {
         case installing
         case installed
@@ -71,20 +73,35 @@ final class ExtensionStoreModel {
                 expectedSHA256: entry.sha256,
                 appName: entry.providerAppName)
             working[entry.id] = .installed
-            await refreshInstalled()
+            await confirmRegistration(of: entry)
         } catch {
             working[entry.id] = .failed(error.localizedDescription)
         }
     }
 
+    private func confirmRemoval(of entry: CatalogEntry, attempts: Int = 12) async {
+        for _ in 0..<attempts {
+            await refreshInstalled()
+            if !installedPacks.contains(entry.id) { return }
+            try? await Task.sleep(for: .milliseconds(400))
+        }
+    }
+
+    private func confirmRegistration(of entry: CatalogEntry, attempts: Int = 12) async {
+        for _ in 0..<attempts {
+            await refreshInstalled()
+            if installedPacks.contains(entry.id) { return }
+            try? await Task.sleep(for: .milliseconds(400))
+        }
+    }
+
     func uninstall(_ entry: CatalogEntry) async {
-        guard working[entry.id] == nil, let bundleID = entry.bundleIDs.first else { return }
-        working[entry.id] = .installing
-        defer { working[entry.id] = nil }
+        guard !uninstalling.contains(entry.id), let bundleID = entry.bundleIDs.first else { return }
+        uninstalling.insert(entry.id)
+        defer { uninstalling.remove(entry.id) }
         do {
             try await client.uninstall(extensionBundleID: bundleID)
-            working[entry.id] = nil
-            installedPacks.remove(entry.id)
+            await confirmRemoval(of: entry)
         } catch {
             await refreshInstalled()
             if installedPacks.contains(entry.id) {
@@ -177,7 +194,10 @@ struct ExtensionStoreView: View {
 
     @ViewBuilder
     private func action(for entry: CatalogEntry) -> some View {
-        switch model.state(for: entry) {
+        if model.uninstalling.contains(entry.id) {
+            ProgressView().controlSize(.small)
+        } else {
+            switch model.state(for: entry) {
         case .installing:
             ProgressView().controlSize(.small)
         case .installed:
@@ -205,6 +225,7 @@ struct ExtensionStoreView: View {
                 }
             } else {
                 button("Install", entry)
+            }
             }
         }
     }
