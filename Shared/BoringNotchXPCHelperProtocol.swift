@@ -75,6 +75,11 @@ final class BNLunarBrightnessEvent: NSObject, NSSecureCoding {
     func installedExtensionBundleIDs(with reply: @escaping ([String]) -> Void)
 
     func installedExtensionPaths(with reply: @escaping ([String]) -> Void)
+
+    func pruneForeignExtensionRecords(
+        forExtensionBundleIDs identifiers: [String],
+        with reply: @escaping ([String]) -> Void
+    )
 }
 
 @objc protocol BoringNotchXPCHelperDelegate {

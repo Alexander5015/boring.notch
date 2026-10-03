@@ -49,6 +49,8 @@ struct DynamicNotchApp: App {
     @Default(.menubarIcon) var showMenuBarIcon
     @Environment(\.openWindow) var openWindow
 
+    static let opensStoreOnLaunch = CommandLine.arguments.contains("--tmp-store")
+
     static let pendingInstallSpec: (url: URL, sha256: String, appName: String)? = {
         let arguments = CommandLine.arguments
         guard let flag = arguments.firstIndex(of: "--tmp-install-extension"),
@@ -75,8 +77,29 @@ struct DynamicNotchApp: App {
         SettingsWindowController.shared.setUpdaterController(updaterController)
 
         //
+        if Self.opensStoreOnLaunch {
+            DispatchQueue.main.async { ExtensionStoreWindowController.shared.showWindow_() }
+        }
+
         NotchTabRegistry.shared.metadataRoots = [ExtensionInstallRoot.url]
         NotchTabRegistry.shared.start()
+
+        //
+        Task { @MainActor in
+            let registry = NotchTabRegistry.shared
+            for _ in 0..<20 {
+                let identifiers = registry.tabs.map(\.bundleID)
+                if !identifiers.isEmpty {
+                    let removed = await ExtensionInstallClient(helper: .shared)
+                        .pruneForeignRecords(forExtensionBundleIDs: identifiers)
+                    if !removed.isEmpty {
+                        NSLog("BNKLDIAG pruned %d stale record(s)", removed.count)
+                    }
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+        }
 
         if let spec = Self.pendingInstallSpec {
             Task { @MainActor in

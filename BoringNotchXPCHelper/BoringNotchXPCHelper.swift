@@ -547,6 +547,13 @@ extension BoringNotchXPCHelper {
         reply(ExtensionInstaller.installedExtensionBundleIDs())
     }
 
+    @objc func pruneForeignExtensionRecords(
+        forExtensionBundleIDs identifiers: [String],
+        with reply: @escaping ([String]) -> Void
+    ) {
+        reply(ExtensionInstaller.pruneForeignRecords(forExtensionBundleIDs: identifiers))
+    }
+
     @objc func installedExtensionPaths(with reply: @escaping ([String]) -> Void) {
         let ids = ExtensionInstaller.installedExtensionBundleIDs()
         reply(ids.flatMap { ExtensionInstaller.registeredPaths(for: $0) })

@@ -49,14 +49,25 @@ struct ExtensionCatalog: Sendable {
         var entries: [CatalogEntry] = []
         for file in files {
             guard let name = file["name"] as? String, name.hasSuffix(".toml"),
-                  let raw = file["content"] as? String,
-                  let data = Data(base64Encoded: raw.replacingOccurrences(of: "\n", with: "")),
+                  let raw = file["download_url"] as? String,
+                  let url = URL(string: raw),
+                  let data = try? await fetch(url),
                   let text = String(data: data, encoding: .utf8),
                   let entry = CatalogEntry(record: text) else { continue }
             entries.append(entry)
         }
         guard !entries.isEmpty else { throw CatalogError.noRecords }
         return entries.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    private func fetch(_ url: URL) async throws -> Data {
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw CatalogError.http(http.statusCode)
+        }
+        return data
     }
 
     private func contentsURL(for repository: URL) -> URL {

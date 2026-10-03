@@ -72,6 +72,17 @@ struct ExtensionInstallClient {
         }) ?? []
     }
 
+    @MainActor
+    func pruneForeignRecords(forExtensionBundleIDs identifiers: [String]) async -> [String] {
+        guard !identifiers.isEmpty else { return [] }
+        let service = await helper.extensionService()
+        return (try? await service.withContinuation { service, continuation in
+            service.pruneForeignExtensionRecords(forExtensionBundleIDs: identifiers) {
+                continuation.resume(returning: $0)
+            }
+        }) ?? []
+    }
+
     private static func download(_ url: URL) async throws -> Data {
         if url.isFileURL {
             return try Data(contentsOf: url)

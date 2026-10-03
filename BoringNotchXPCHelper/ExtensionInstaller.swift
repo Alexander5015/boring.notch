@@ -176,12 +176,16 @@ enum ExtensionInstaller {
         }
     }
 
+    private static func samePath(_ lhs: String, _ rhs: String) -> Bool {
+        lhs.lowercased() == rhs.lowercased()
+    }
+
     private static func evictStaleRecords(for bundleID: String, keeping provider: URL) {
         guard let keep = try? firstExtensionBundle(in: provider) else { return }
         let wanted = keep.standardizedFileURL.path
         for path in registeredPaths(for: bundleID) {
             let normalised = URL(fileURLWithPath: path).standardizedFileURL.path
-            guard normalised != wanted else { continue }
+            guard !samePath(normalised, wanted) else { continue }
             _ = Tool.run("/usr/bin/pluginkit", ["-r", normalised])
         }
     }
@@ -202,7 +206,7 @@ enum ExtensionInstaller {
         while Date() < deadline {
             let found = registeredPaths(for: bundleID)
                 .contains { (path: String) in
-                    URL(fileURLWithPath: path).standardizedFileURL.path == wanted
+                    samePath(URL(fileURLWithPath: path).standardizedFileURL.path, wanted)
                 }
             if found { return }
             Thread.sleep(forTimeInterval: 0.4)
@@ -219,6 +223,22 @@ enum ExtensionInstaller {
                 line.split(separator: "\t").last.map(String.init)
             }
             .filter { !$0.isEmpty }
+    }
+
+    @discardableResult
+    static func pruneForeignRecords(forExtensionBundleIDs identifiers: [String]) -> [String] {
+        let root = installRoot.standardizedFileURL.path
+        var removed: [String] = []
+        for identifier in identifiers {
+            for path in registeredPaths(for: identifier) {
+                let normalised = URL(fileURLWithPath: path).standardizedFileURL.path
+                guard !normalised.hasPrefix(root + "/") else { continue }
+                if Tool.run("/usr/bin/pluginkit", ["-r", normalised]).succeeded {
+                    removed.append(normalised)
+                }
+            }
+        }
+        return removed
     }
 
     static func installedExtensionBundleIDs() -> [String] {
