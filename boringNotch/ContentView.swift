@@ -591,10 +591,11 @@ struct ContentView: View {
                                         width: openNotchSize.width,
                                         height: openNotchSize.height
                                             - cornerRadiusInsets.opened.top
-                                            - cornerRadiusInsets.opened.bottom
-                                            - notchTabBarHeight)
+                                            - cornerRadiusInsets.opened.bottom)
                                 )
                                 .id(tab.bundleID)
+                                //
+                                .padding(.top, showsHeader ? max(38, displayClosedNotchHeight) : 0)
                                     .ignoresSafeArea(.container, edges: .all)
                             } else {
                                 ContentUnavailableView(
