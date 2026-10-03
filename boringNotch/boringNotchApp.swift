@@ -84,6 +84,21 @@ struct DynamicNotchApp: App {
         NotchTabRegistry.shared.metadataRoots = [ExtensionInstallRoot.url]
         NotchTabRegistry.shared.start()
 
+        //
+        Task { @MainActor in
+            let registry = NotchTabRegistry.shared
+            let client = ExtensionInstallClient(helper: .shared)
+            var installed: Set<String> = []
+            for _ in 0..<20 {
+                for tab in registry.tabs where await client.isInstalled(extensionBundleID: tab.bundleID) {
+                    installed.insert(tab.bundleID)
+                }
+                if !registry.tabs.isEmpty || !installed.isEmpty { break }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            registry.installedBundleIDs = installed
+        }
+
         if let spec = Self.pendingInstallSpec {
             Task { @MainActor in
                 do {

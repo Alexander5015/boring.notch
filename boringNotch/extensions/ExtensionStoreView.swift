@@ -50,6 +50,7 @@ final class ExtensionStoreModel {
             NSLog("ExtensionStore: catalog unavailable: %@", error.localizedDescription)
             failure = error.localizedDescription
         }
+        await publishInstalledSet()
         loading = false
     }
 
@@ -75,7 +76,7 @@ final class ExtensionStoreModel {
                 appName: entry.providerAppName)
             working[entry.id] = .installed
             await confirmRegistration(of: entry)
-            NotchTabRegistry.shared.refresh()
+            await publishInstalledSet()
         } catch {
             working[entry.id] = .failed(error.localizedDescription)
         }
@@ -104,13 +105,24 @@ final class ExtensionStoreModel {
         do {
             try await client.uninstall(extensionBundleID: bundleID)
             await confirmRemoval(of: entry)
-            NotchTabRegistry.shared.refresh()
+            await publishInstalledSet()
         } catch {
             await refreshInstalled()
             if installedPacks.contains(entry.id) {
                 working[entry.id] = .failed(error.localizedDescription)
             }
         }
+    }
+
+    private func publishInstalledSet() async {
+        var identifiers: Set<String> = []
+        for entry in entries {
+            for bundleID in entry.bundleIDs
+            where await client.isInstalled(extensionBundleID: bundleID) {
+                identifiers.insert(bundleID)
+            }
+        }
+        NotchTabRegistry.shared.installedBundleIDs = identifiers
     }
 
     func state(for entry: CatalogEntry) -> Progress? { working[entry.id] }

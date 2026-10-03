@@ -591,7 +591,8 @@ struct ContentView: View {
                                         width: openNotchSize.width,
                                         height: openNotchSize.height
                                             - cornerRadiusInsets.opened.top
-                                            - cornerRadiusInsets.opened.bottom)
+                                            - cornerRadiusInsets.opened.bottom
+                                            - notchTabBarHeight)
                                 )
                                 .id(tab.bundleID)
                                     .ignoresSafeArea(.container, edges: .all)
