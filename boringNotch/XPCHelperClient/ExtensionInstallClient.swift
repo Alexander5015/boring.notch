@@ -51,6 +51,19 @@ struct ExtensionInstallClient {
     }
 
     @MainActor
+    func uninstall(extensionBundleID bundleID: String) async throws {
+        let service = await helper.extensionService()
+        let path: String? = try await service.withContinuation { service, continuation in
+            service.providerPath(containingExtensionBundleID: bundleID) { continuation.resume(returning: $0) }
+        }
+        guard let path else {
+            throw ExtensionInstallError.unavailable(
+                "\(bundleID) is not installed, so there is nothing to remove.")
+        }
+        try await uninstall(providerAt: path)
+    }
+
+    @MainActor
     func uninstall(providerAt path: String) async throws {
         let service = await helper.extensionService()
         try await service.withContinuation { (service, continuation: CheckedContinuation<Void, Error>) in

@@ -76,6 +76,8 @@ final class BNLunarBrightnessEvent: NSObject, NSSecureCoding {
 
     func isExtensionInstalled(_ bundleID: String, with reply: @escaping (Bool) -> Void)
 
+    func providerPath(containingExtensionBundleID bundleID: String, with reply: @escaping (String?) -> Void)
+
     func installedExtensionPaths(with reply: @escaping ([String]) -> Void)
 
     func pruneForeignExtensionRecords(

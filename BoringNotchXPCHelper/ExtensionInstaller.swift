@@ -242,6 +242,31 @@ enum ExtensionInstaller {
         return removed
     }
 
+    static func providerPath(forExtensionBundleID bundleID: String) -> String? {
+        let fileManager = FileManager.default
+        guard let providers = try? fileManager.contentsOfDirectory(
+            at: installRoot, includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants])
+        else { return nil }
+
+        var candidates: [URL] = []
+        for directory in providers {
+            guard let apps = try? fileManager.contentsOfDirectory(
+                at: directory, includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants])
+            else { continue }
+            candidates.append(contentsOf: apps.filter { $0.pathExtension == "app" })
+        }
+        candidates.append(contentsOf: providers.filter { $0.pathExtension == "app" })
+
+        for provider in candidates {
+            guard let appex = try? firstExtensionBundle(in: provider),
+                  Bundle(url: appex)?.bundleIdentifier == bundleID else { continue }
+            return provider.path
+        }
+        return nil
+    }
+
     static func isRegistered(_ bundleID: String) -> Bool {
         !registeredPaths(for: bundleID).isEmpty
     }
@@ -265,7 +290,7 @@ enum ExtensionInstaller {
     static func uninstall(providerAt path: String) throws {
         let url = URL(fileURLWithPath: path)
         let root = installRoot.standardizedFileURL.path
-        guard url.standardizedFileURL.path.hasPrefix(root + "/") else {
+        guard url.standardizedFileURL.path.lowercased().hasPrefix(root.lowercased() + "/") else {
             throw InstallFailure.toolFailed("uninstall", "\(path) is not an installed extension")
         }
         if let appex = try? firstExtensionBundle(in: url) {

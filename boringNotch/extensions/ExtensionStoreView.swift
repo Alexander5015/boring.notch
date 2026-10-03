@@ -33,6 +33,9 @@ final class ExtensionStoreModel {
         await refreshInstalled()
         do {
             entries = try await catalog.load()
+            if CommandLine.arguments.contains("--tmp-store-uninstall") {
+                Task { @MainActor in if let first = entries.first { await uninstall(first) } }
+            }
             if CommandLine.arguments.contains("--tmp-store-install") {
                 Task { @MainActor in if let first = entries.first { await install(first) } }
             }
@@ -65,6 +68,19 @@ final class ExtensionStoreModel {
                 appName: entry.providerAppName)
             working[entry.id] = .installed
             await refreshInstalled()
+        } catch {
+            working[entry.id] = .failed(error.localizedDescription)
+        }
+    }
+
+    func uninstall(_ entry: CatalogEntry) async {
+        guard working[entry.id] == nil, let bundleID = entry.bundleIDs.first else { return }
+        working[entry.id] = .installing
+        defer { working[entry.id] = nil }
+        do {
+            try await client.uninstall(extensionBundleID: bundleID)
+            working[entry.id] = nil
+            installedPacks.remove(entry.id)
         } catch {
             working[entry.id] = .failed(error.localizedDescription)
         }
@@ -167,8 +183,8 @@ struct ExtensionStoreView: View {
                         .labelStyle(.titleAndIcon)
                         .foregroundStyle(.green)
                         .font(.callout)
-                    Button("Reinstall") {
-                        Task { await model.install(entry) }
+                    Button("Uninstall") {
+                        Task { await model.uninstall(entry) }
                     }
                     .buttonStyle(.link)
                     .font(.caption)
