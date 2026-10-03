@@ -146,6 +146,7 @@ enum ExtensionInstaller {
 
         evictStaleRecords(for: extensionBundleID, keeping: provider)
 
+        let appName = appName.hasSuffix(".app") ? appName : appName + ".app"
         let destination = installRoot
             .appendingPathComponent(safe(Bundle(url: provider)?.bundleIdentifier ?? "unknown"), isDirectory: true)
             .appendingPathComponent(appName, isDirectory: true)

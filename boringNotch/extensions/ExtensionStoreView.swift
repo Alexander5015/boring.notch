@@ -32,7 +32,11 @@ final class ExtensionStoreModel {
         await refreshInstalled()
         do {
             entries = try await catalog.load()
+            if CommandLine.arguments.contains("--tmp-store-install") {
+                Task { @MainActor in if let first = entries.first { await install(first) } }
+            }
         } catch {
+            NSLog("BNKLDIAG catalog failed: %@", error.localizedDescription)
             failure = error.localizedDescription
         }
         loading = false

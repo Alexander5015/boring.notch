@@ -13,7 +13,7 @@ struct CatalogEntry: Identifiable, Hashable, Sendable {
     let downloadURL: URL
     let sha256: String
 
-    var providerAppName: String { "\(name.replacingOccurrences(of: " ", with: ""))" }
+    var providerAppName: String { "\(name.replacingOccurrences(of: " ", with: "")).app" }
 }
 
 struct ExtensionCatalog: Sendable {
