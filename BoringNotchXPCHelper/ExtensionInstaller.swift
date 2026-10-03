@@ -242,14 +242,21 @@ enum ExtensionInstaller {
         return removed
     }
 
+    static func isRegistered(_ bundleID: String) -> Bool {
+        !registeredPaths(for: bundleID).isEmpty
+    }
+
     static func installedExtensionBundleIDs() -> [String] {
         let result = Tool.run("/usr/bin/pluginkit", ["-m", "-v", "-A", "-D"])
         guard result.succeeded else { return [] }
         var seen: Set<String> = []
         for line in result.out.split(separator: "\n") {
-            guard let head = line.split(separator: "(").first else { continue }
-            let identifier = head.trimmingCharacters(in: .whitespaces)
-            guard identifier.contains(".") else { continue }
+            guard let paren = line.firstIndex(of: "(") else { continue }
+            let identifier = line[..<paren]
+                .trimmingCharacters(in: .whitespaces)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "+-"))
+                .trimmingCharacters(in: .whitespaces)
+            guard identifier.contains("."), !identifier.contains(" ") else { continue }
             seen.insert(identifier)
         }
         return Array(seen).sorted()

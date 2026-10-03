@@ -73,6 +73,14 @@ struct ExtensionInstallClient {
     }
 
     @MainActor
+    func isInstalled(extensionBundleID bundleID: String) async -> Bool {
+        let service = await helper.extensionService()
+        return (try? await service.withContinuation { service, continuation in
+            service.isExtensionInstalled(bundleID) { continuation.resume(returning: $0) }
+        }) ?? false
+    }
+
+    @MainActor
     func pruneForeignRecords(forExtensionBundleIDs identifiers: [String]) async -> [String] {
         guard !identifiers.isEmpty else { return [] }
         let service = await helper.extensionService()

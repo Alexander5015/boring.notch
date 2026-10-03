@@ -6,9 +6,10 @@ import SwiftUI
 @Observable
 final class ExtensionStoreModel {
     private(set) var entries: [CatalogEntry] = []
-    private(set) var installed: Set<String> = []
     private(set) var loading = true
     private(set) var failure: String?
+
+    private(set) var installedPacks: Set<String> = []
 
     private(set) var working: [String: Progress] = [:]
 
@@ -36,15 +37,21 @@ final class ExtensionStoreModel {
                 Task { @MainActor in if let first = entries.first { await install(first) } }
             }
         } catch {
-            NSLog("BNKLDIAG catalog failed: %@", error.localizedDescription)
+            NSLog("ExtensionStore: catalog unavailable: %@", error.localizedDescription)
             failure = error.localizedDescription
         }
         loading = false
     }
 
     func refreshInstalled() async {
-        let identifiers = await client.installedExtensionBundleIDs()
-        installed = Set(identifiers)
+        var packs: Set<String> = []
+        for entry in entries {
+            for bundleID in entry.bundleIDs
+            where await client.isInstalled(extensionBundleID: bundleID) {
+                packs.insert(entry.id)
+            }
+        }
+        installedPacks = packs
     }
 
     func install(_ entry: CatalogEntry) async {
@@ -64,11 +71,9 @@ final class ExtensionStoreModel {
     }
 
     func state(for entry: CatalogEntry) -> Progress? { working[entry.id] }
-    func isInstalled(_ entry: CatalogEntry) -> Bool { !installed.isDisjoint(with: entry.bundleIDs) }
-}
-
-private extension CatalogEntry {
-    var bundleIDs: Set<String> { [id] }
+    func isInstalled(_ entry: CatalogEntry) -> Bool {
+        installedPacks.contains(entry.id)
+    }
 }
 
 struct ExtensionStoreView: View {

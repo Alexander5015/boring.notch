@@ -84,23 +84,6 @@ struct DynamicNotchApp: App {
         NotchTabRegistry.shared.metadataRoots = [ExtensionInstallRoot.url]
         NotchTabRegistry.shared.start()
 
-        //
-        Task { @MainActor in
-            let registry = NotchTabRegistry.shared
-            for _ in 0..<20 {
-                let identifiers = registry.tabs.map(\.bundleID)
-                if !identifiers.isEmpty {
-                    let removed = await ExtensionInstallClient(helper: .shared)
-                        .pruneForeignRecords(forExtensionBundleIDs: identifiers)
-                    if !removed.isEmpty {
-                        NSLog("BNKLDIAG pruned %d stale record(s)", removed.count)
-                    }
-                    return
-                }
-                try? await Task.sleep(for: .milliseconds(250))
-            }
-        }
-
         if let spec = Self.pendingInstallSpec {
             Task { @MainActor in
                 do {

@@ -13,6 +13,8 @@ struct CatalogEntry: Identifiable, Hashable, Sendable {
     let downloadURL: URL
     let sha256: String
 
+    let bundleIDs: [String]
+
     var providerAppName: String { "\(name.replacingOccurrences(of: " ", with: "")).app" }
 }
 
@@ -109,5 +111,6 @@ extension CatalogEntry {
         self.license = root.string("license")
         self.downloadURL = url
         self.sha256 = sha
+        self.bundleIDs = root.tables("extensions").compactMap { $0.string("bundleID") }
     }
 }
