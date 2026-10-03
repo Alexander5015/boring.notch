@@ -584,7 +584,14 @@ struct ContentView: View {
                             )
                         case .extensionTab(let bundleID):
                             if let tab = registry.tabs.first(where: { $0.bundleID == bundleID }) {
-                                NotchTabHost(identity: tab.identity, size: tab.size)
+                                NotchTabHost(
+                                    identity: tab.identity,
+                                    size: tab.size,
+                                    maximumSize: CGSize(
+                                        width: openNotchSize.width,
+                                        height: openNotchSize.height
+                                            - cornerRadiusInsets.opened.top
+                                            - cornerRadiusInsets.opened.bottom))
                                     .ignoresSafeArea(.container, edges: .all)
                             } else {
                                 ContentUnavailableView(
