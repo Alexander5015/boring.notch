@@ -9,10 +9,17 @@ import NotchTabHost
 import SwiftUI
 
 struct TabModel: Identifiable {
-    let id = UUID()
     let label: String
     let icon: String
     let view: NotchViews
+
+    var id: String {
+        switch view {
+        case .home: "home"
+        case .shelf: "shelf"
+        case .extensionTab(let bundleID): bundleID
+        }
+    }
 }
 
 func builtInTabs() -> [TabModel] {

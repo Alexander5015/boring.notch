@@ -75,6 +75,7 @@ struct DynamicNotchApp: App {
         SettingsWindowController.shared.setUpdaterController(updaterController)
 
         //
+        NotchTabRegistry.shared.metadataRoots = [ExtensionInstallRoot.url]
         NotchTabRegistry.shared.start()
 
         if let spec = Self.pendingInstallSpec {

@@ -144,6 +144,8 @@ enum ExtensionInstaller {
         let extensionBundleID = try validate(
             provider: provider, expectedExtensionPoint: expectedExtensionPoint)
 
+        evictStaleRecords(for: extensionBundleID, keeping: provider)
+
         let destination = installRoot
             .appendingPathComponent(safe(Bundle(url: provider)?.bundleIdentifier ?? "unknown"), isDirectory: true)
             .appendingPathComponent(appName, isDirectory: true)
@@ -171,6 +173,16 @@ enum ExtensionInstaller {
             guard result.succeeded else {
                 throw InstallFailure.toolFailed("pluginkit", result.err)
             }
+        }
+    }
+
+    private static func evictStaleRecords(for bundleID: String, keeping provider: URL) {
+        guard let keep = try? firstExtensionBundle(in: provider) else { return }
+        let wanted = keep.standardizedFileURL.path
+        for path in registeredPaths(for: bundleID) {
+            let normalised = URL(fileURLWithPath: path).standardizedFileURL.path
+            guard normalised != wanted else { continue }
+            _ = Tool.run("/usr/bin/pluginkit", ["-r", normalised])
         }
     }
 
