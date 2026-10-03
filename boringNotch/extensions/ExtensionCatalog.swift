@@ -43,6 +43,9 @@ struct ExtensionCatalog: Sendable {
     }
 
     func load(from repository: URL = ExtensionCatalog.registry) async throws -> [CatalogEntry] {
+        // The listing carries no file contents, so each record is fetched from
+        // its download_url. Reading `content` here yields nil for every record and
+        // the store reports an empty registry.
         let listing = try await fetchJSON(url: contentsURL(for: repository))
         guard let files = try JSONSerialization.jsonObject(with: listing) as? [[String: Any]] else {
             throw CatalogError.noRecords

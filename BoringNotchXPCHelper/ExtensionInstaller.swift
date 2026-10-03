@@ -165,10 +165,17 @@ enum ExtensionInstaller {
     }
 
     private static func register(_ provider: URL) throws {
+        // The seed flag makes this the authoritative record for the bundle id;
+        // without it a stale record elsewhere keeps winning. The tool's -f is not
+        // the same thing, which is why this is the API.
         let status = LSRegisterURL(provider as CFURL, true)
         guard status == noErr else { throw InstallFailure.launchServicesRefused(status, provider) }
 
         for appex in embeddedExtensions(of: provider) {
+            // LSRegisterURL cannot register an appex at all: it answers -10811
+            // whether or not the bundle is well formed. There is no public
+            // equivalent, so this is the only way an installed appex becomes
+            // discoverable.
             let result = Tool.run("/usr/bin/pluginkit", ["-a", appex.path])
             if result.timedOut { throw InstallFailure.timedOut("pluginkit") }
             guard result.succeeded else {
@@ -222,6 +229,8 @@ enum ExtensionInstaller {
             .split(separator: "\n")
             .compactMap { line -> String? in
                 guard let path = line.split(separator: "\t").last,
+                      // With no match pluginkit prints "  (no matches)", whose
+                      // last field would otherwise read as an installed path.
                       path.hasPrefix("/") else { return nil }
                 return String(path)
             }

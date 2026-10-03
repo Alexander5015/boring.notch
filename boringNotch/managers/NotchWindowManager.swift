@@ -147,25 +147,6 @@ final class NotchWindowManager {
                 .environment(NotchTabRegistry.shared)
         )
 
-        //
-        //
-        if CommandLine.arguments.contains("--tmp-open-notch") {
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(2))
-                viewModel.open()
-                let arguments = CommandLine.arguments
-                if let flag = arguments.firstIndex(of: "--tmp-select-extension") {
-                    let wanted = flag + 1 < arguments.count ? arguments[flag + 1] : nil
-                    if let tab = NotchTabRegistry.shared.tabs.first(where: {
-                        wanted == nil || $0.bundleID.contains(wanted ?? "")
-                    }) {
-                        BoringViewCoordinator.shared.currentView =
-                            .extensionTab(bundleID: tab.bundleID)
-                    }
-                }
-            }
-        }
-
         window.orderFrontRegardless()
         NotchSpaceManager.shared.notchSpace.windows.insert(window)
 

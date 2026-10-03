@@ -36,16 +36,6 @@ final class ExtensionStoreModel {
         await refreshInstalled()
         do {
             entries = try await catalog.load()
-            if let wanted = ExtensionStoreView.storeUninstallTarget {
-                Task { @MainActor in
-                    if let entry = entries.first(where: { $0.id == wanted }) {
-                        await uninstall(entry)
-                    }
-                }
-            }
-            if CommandLine.arguments.contains("--tmp-store-install") {
-                Task { @MainActor in for entry in entries { await install(entry) } }
-            }
         } catch {
             NSLog("ExtensionStore: catalog unavailable: %@", error.localizedDescription)
             failure = error.localizedDescription
@@ -132,12 +122,6 @@ final class ExtensionStoreModel {
 }
 
 struct ExtensionStoreView: View {
-    static var storeUninstallTarget: String? {
-        let arguments = CommandLine.arguments
-        guard let flag = arguments.firstIndex(of: "--tmp-store-uninstall"),
-              flag + 1 < arguments.count else { return nil }
-        return arguments[flag + 1]
-    }
 
     @State private var model = ExtensionStoreModel()
     @State private var showingApproval = false
