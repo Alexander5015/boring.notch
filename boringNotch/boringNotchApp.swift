@@ -118,6 +118,11 @@ struct DynamicNotchApp: App {
                 }
             }
             .keyboardShortcut(KeyEquivalent(","), modifiers: .command)
+            Button("Extensions…") {
+                DispatchQueue.main.async {
+                    ExtensionStoreWindowController.shared.showWindow_()
+                }
+            }
             CheckForUpdatesView(updater: updaterController.updater)
             Button("Restart Boring Notch") {
                 ApplicationRelauncher.restart()
