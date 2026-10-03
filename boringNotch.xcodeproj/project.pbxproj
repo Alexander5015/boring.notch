@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		EE0000000000000000000031 /* BoringNotch.appextensionpoint in Copy Extension Point Declaration */ = {isa = PBXBuildFile; fileRef = EE0000000000000000000010 /* BoringNotch.appextensionpoint */; };
 		EE0000000000000000000011 /* BoringNotch.appextensionpoint in Resources */ = {isa = PBXBuildFile; fileRef = EE0000000000000000000010 /* BoringNotch.appextensionpoint */; };
 		EE0000000000000000000003 /* NotchTabHost in Frameworks */ = {isa = PBXBuildFile; productRef = EE0000000000000000000002 /* NotchTabHost */; };
 		07FE456E7AEA085D9FCA6D97 /* MeetingLinkDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9B2A5E5F4D28F1DD9CD0B09 /* MeetingLinkDetector.swift */; };
@@ -161,6 +162,17 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		EE0000000000000000000030 /* Copy Extension Point Declaration */ = {
+			isa = PBXCopyFilesBuildPhase;
+			dstPath = Contents/Extensions;
+			dstSubfolder = Wrapper;
+			files = (
+				EE0000000000000000000031 /* BoringNotch.appextensionpoint in Copy Extension Point Declaration */,
+			);
+			name = "Copy Extension Point Declaration";
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 		11F748412EC8051E00F841DB /* Embed XPC Services */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -824,6 +836,7 @@
 				14CEF4102C5CAED300855D72 /* Resources */,
 				B1ECFA062C6FE58A002ACD87 /* Embed Frameworks */,
 				11F748412EC8051E00F841DB /* Embed XPC Services */,
+				EE0000000000000000000030 /* Copy Extension Point Declaration */,
 			);
 			buildRules = (
 			);
@@ -953,7 +966,6 @@
 				14CEF41A2C5CAED400855D72 /* Assets.xcassets in Resources */,
 				112B0EB82E30DD0F00562D6C /* MediaRemoteAdapterTestClient in Resources */,
 				112B0EB92E30DD0F00562D6C /* mediaremote-adapter.pl in Resources */,
-				EE0000000000000000000011 /* BoringNotch.appextensionpoint in Resources */,
 				B17266E12C6532560031BA0D /* Localizable.xcstrings in Resources */,
 				14A7E5972C65FD31008C1BE9 /* boring.m4a in Resources */,
 			);
@@ -1122,11 +1134,11 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = BoringNotchXPCHelper/BoringNotchXPCHelper.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 272;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = JPWMG84CH8;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BoringNotchXPCHelper/Info.plist;
@@ -1148,11 +1160,11 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = BoringNotchXPCHelper/BoringNotchXPCHelper.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 272;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = JPWMG84CH8;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BoringNotchXPCHelper/Info.plist;
@@ -1306,13 +1318,13 @@
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = boringNotch/boringNotch.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 272;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"boringNotch/Preview Content\"";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = JPWMG84CH8;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
@@ -1376,13 +1388,13 @@
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = boringNotch/boringNotch.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 272;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"boringNotch/Preview Content\"";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = JPWMG84CH8;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
@@ -1439,7 +1451,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_IDENTITY = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = JPWMG84CH8;
@@ -1462,7 +1474,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_IDENTITY = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = JPWMG84CH8;
