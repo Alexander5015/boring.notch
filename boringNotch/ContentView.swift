@@ -373,7 +373,6 @@ struct ContentView: View {
         .padding(.bottom, 8)
         .frame(maxWidth: windowSize.width, maxHeight: windowSize.height, alignment: .top)
         .ignoresSafeArea(.all)
-        .compositingGroup()
         .scaleEffect(
             x: gestureScale,
             y: gestureScale,
@@ -417,172 +416,19 @@ struct ContentView: View {
         @Bindable var dropInteraction = vm.dropInteraction
 
         VStack(alignment: .leading) {
-            VStack(alignment: .leading) {
-                if coordinator.helloAnimationRunning {
-                    Spacer()
-                    HelloAnimation(onFinish: {
-                        vm.closeHello()
-                    }).frame(
-                        width: getClosedNotchSize().width,
-                        height: 80
-                    )
-                    .padding(.top, 40)
-                    Spacer()
-                } else {
-                    if shouldDisplayNowPlayingFallbackNotice,
-                       let notice = musicManager.nowPlayingNotice {
-                        nowPlayingFallbackNotice(notice)
-                            .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
-                    } else if coordinator.expandingView.type == .battery && coordinator.expandingView.show
-                        && vm.notchState == .closed && Defaults[.showPowerStatusNotifications] {
-                        HStack(spacing: 0) {
-                            HStack {
-                                Text(batteryModel.statusText)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.white)
-                            }
+            ClosedNotchContentView(
+                activityIndex: $activityIndex,
+                isHovering: $isHovering,
+                gestureProgress: $gestureProgress,
+                albumArtNamespace: albumArtNamespace
+            )
 
-                            Rectangle()
-                                .fill(.black)
-                                .frame(width: vm.closedNotchSize.width + 10)
-
-                            HStack {
-                                BoringBatteryView(
-                                    batteryWidth: 30,
-                                    isCharging: batteryModel.isCharging,
-                                    isInLowPowerMode: batteryModel.isInLowPowerMode,
-                                    isPluggedIn: batteryModel.isPluggedIn,
-                                    levelBattery: batteryModel.levelBattery,
-                                    maxAdapterWatts: batteryModel.maxAdapterWatts,
-                                    isForNotification: true
-                                )
-                            }
-                            .frame(width: 76, alignment: .trailing)
-                        }
-                        .frame(height: displayClosedNotchHeight, alignment: .center)
-                        } else if coordinator.shouldShowSneakPeek(on: vm.screenUUID) && Defaults[.inlineOSD] && (coordinator.sneakPeekState(for: vm.screenUUID).type != .music) && (coordinator.sneakPeekState(for: vm.screenUUID).type != .battery) && vm.notchState == .closed {
-                           InlineOSD(
-                              type: coordinator.binding(for: vm.screenUUID).type,
-                              value: coordinator.binding(for: vm.screenUUID).value,
-                              icon: coordinator.binding(for: vm.screenUUID).icon,
-                              accent: coordinator.binding(for: vm.screenUUID).accent,
-                              hoverAnimation: $isHovering,
-                              gestureProgress: $gestureProgress
-                          )
-                              .transition(.opacity)
-                      } else if !liveActivities.isEmpty && vm.notchState == .closed && !vm.hideOnClosed {
-                          LiveActivityStack(items: liveActivities, index: $activityIndex) { item in
-                              switch item {
-                              case .notification(let notification):
-                                  NotificationLiveActivity(notification: notification)
-                              case .music:
-                                  MusicLiveActivity()
-                                      .frame(alignment: .center)
-                              }
-                          }
-                      } else if !coordinator.expandingView.show && vm.notchState == .closed && (!musicManager.isPlaying && musicManager.isPlayerIdle) && Defaults[.showNotHumanFace] && !vm.hideOnClosed {
-                          BoringFaceAnimation()
-                       } else if showsHeader {
-                           // No tab bar over a notification: it's a glance,
-                           // not a place to switch between home and shelf —
-                           // and the header spans the full notch width,
-                           // which is what was stretching the whole panel
-                           // out around a short message.
-                           BoringHeader()
-                               .frame(height: max(38, displayClosedNotchHeight))
-                               .opacity(gestureProgress != 0 ? 1.0 - min(abs(gestureProgress) * 0.1, 0.3) : 1.0)
-                       }
-                        // New case to enable compact notch on external displays
-                        else if !vm.hasNotch {
-                           Rectangle().fill(.clear).frame(width: vm.closedNotchSize.width - 20, height: 11) // idle notch height is halved on non notch display
-                       } else {
-                           Rectangle().fill(.clear).frame(width: vm.closedNotchSize.width - 20, height: displayClosedNotchHeight)
-                       }
-
-                        if coordinator.shouldShowSneakPeek(on: vm.screenUUID) {
-                           if (coordinator.sneakPeekState(for: vm.screenUUID).type != .music) && (coordinator.sneakPeekState(for: vm.screenUUID).type != .battery) && !Defaults[.inlineOSD] && vm.notchState == .closed {
-                              SystemEventIndicatorModifier(
-                                  eventType: coordinator.binding(for: vm.screenUUID).type,
-                                  value: coordinator.binding(for: vm.screenUUID).value,
-                                  icon: coordinator.binding(for: vm.screenUUID).icon,
-                                  accent: coordinator.binding(for: vm.screenUUID).accent,
-                                  sendEventBack: { newVal in
-                                      switch coordinator.sneakPeekState(for: vm.screenUUID).type {
-                                      case .volume:
-                                          VolumeManager.shared.setAbsolute(Float32(newVal))
-                                      case .brightness:
-                                          BrightnessManager.shared.setAbsolute(value: Float32(newVal))
-                                      default:
-                                          break
-                                      }
-                                  }
-                              )
-                              .padding(.bottom, 10)
-                              .padding(.leading, 4)
-                              .padding(.trailing, 8)
-                          }
-                           // Old sneak peek music
-                           else if coordinator.sneakPeekState(for: vm.screenUUID).type == .music {
-                               if vm.notchState == .closed && !vm.hideOnClosed && Defaults[.sneakPeekStyles] == .standard {
-                                   HStack(alignment: .center) {
-                                       Image(systemName: "music.note")
-                                       GeometryReader { geo in
-                                           MarqueeText(musicManager.songTitle + " - " + musicManager.artistName, color: Defaults[.playerColorTinting] ? Color(nsColor: musicManager.avgColor).ensureMinimumBrightness(factor: 0.6) : .gray, delayDuration: 1.0, frameWidth: geo.size.width)
-                                       }
-                                   }
-                                   .foregroundStyle(.gray)
-                                   .padding(.bottom, 10)
-                               }
-                           }
-                       }
-                        }
-                      }
-                      .conditionalModifier((coordinator.shouldShowSneakPeek(on: vm.screenUUID) && (coordinator.sneakPeekState(for: vm.screenUUID).type == .music) && vm.notchState == .closed && !vm.hideOnClosed && Defaults[.sneakPeekStyles] == .standard) || (coordinator.shouldShowSneakPeek(on: vm.screenUUID) && (coordinator.sneakPeekState(for: vm.screenUUID).type != .music) && (vm.notchState == .closed))) { view in
-                          view
-                              .fixedSize()
-                      }
-                      .zIndex(1)
             if vm.notchState == .open {
-                VStack {
-                    // An open notch with a live notification is showing the
-                    // reply UI — the usual tabs can wait until it's dismissed.
-                    if let notification = notificationManager.activeNotification {
-                        NotificationExpandedView(notification: notification)
-                            .id(notification.id)
-                    } else if Defaults[.compactMode] {
-                        // Player only — no tab switching, so currentView is
-                        // ignored here rather than offering a shelf the
-                        // compact layout has no room (or tab bar) for.
-                        // 336 = Atoll's 420 base less 20%, which also lands
-                        // within a few points of their Dynamic Island width
-                        // (340) — the tighter of their two compact sizes.
-                        CompactHomeView(
-                            albumArtNamespace: albumArtNamespace,
-                            horizontalMediaGestureFeedback: horizontalMediaGestureFeedback
-                        )
-                        .frame(width: 336)
-                        .onHover { hovering in
-                            isHoveringMusicArea = hovering
-                        }
-                        .onDisappear {
-                            isHoveringMusicArea = false
-                        }
-                    } else {
-                        switch coordinator.currentView {
-                        case .home:
-                            NotchHomeView(
-                                albumArtNamespace: albumArtNamespace,
-                                horizontalMediaGestureFeedback: horizontalMediaGestureFeedback,
-                                isHoveringMusicArea: $isHoveringMusicArea
-                            )
-                        case .shelf:
-                            ShelfView(
-                                dropInteraction: vm.dropInteraction,
-                                animation: vm.animation
-                            )
-                        }
-                    }
-                }
+                OpenNotchContentView(
+                    albumArtNamespace: albumArtNamespace,
+                    horizontalMediaGestureFeedback: horizontalMediaGestureFeedback,
+                    isHoveringMusicArea: $isHoveringMusicArea
+                )
                 .transition(
                     .scale(scale: 0.8, anchor: .top)
                     .combined(with: .opacity)
@@ -590,202 +436,18 @@ struct ContentView: View {
                 )
                 .zIndex(1)
                 .allowsHitTesting(vm.notchState == .open)
-                .opacity(gestureProgress != 0 ? 1.0 - min(abs(gestureProgress) * 0.1, 0.3) : 1.0)
+                .opacity(
+                    gestureProgress != 0
+                        ? 1.0 - min(abs(gestureProgress) * 0.1, 0.3)
+                        : 1.0
+                )
             }
         }
-        .onDrop(of: [.fileURL, .url, .utf8PlainText, .plainText, .data], delegate: GeneralDropTargetDelegate(isTargeted: $dropInteraction.generalDropTargeting))
-    }
-
-    private func nowPlayingFallbackNotice(_ notice: NowPlayingFallbackNotice) -> some View {
-        HStack(spacing: 11) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Color.orange)
-                .frame(width: 24, height: 24)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(notice.title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-
-                Text(notice.subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.62))
-            }
-            .lineLimit(2)
-
-            Spacer(minLength: 5)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
-        .frame(width: nowPlayingFallbackNoticeWidth)
-        .frame(minHeight: 58)
-        .accessibilityElement(children: .combine)
-        .onAppear {
-            if musicManager.markNowPlayingNoticePresented(notice.id) {
-                announceNowPlayingFallbackNotice(notice)
-            }
-        }
-    }
-
-    private func announceNowPlayingFallbackNotice(_ notice: NowPlayingFallbackNotice) {
-        let announcement = "\(String(localized: notice.title)). \(String(localized: notice.subtitle))."
-        NSAccessibility.post(
-            element: NSApplication.shared,
-            notification: .announcementRequested,
-            userInfo: [
-                .announcement: announcement,
-                .priority: NSAccessibilityPriorityLevel.high.rawValue
-            ]
-        )
-    }
-
-    @ViewBuilder
-    func BoringFaceAnimation() -> some View {
-        HStack {
-            Rectangle()
-                .fill(.black)
-                .frame(width: vm.closedNotchSize.width + 20)
-            let faceScale = min(1.0, displayClosedNotchHeight / 30.0)
-            AnimatedFace(height: 24.0 * faceScale, width: 30.0 * faceScale)
-        }.frame(
-            height: displayClosedNotchHeight,
-            alignment: .center
-        )
-    }
-
-    /// True while the song-change peek is expanding the closed pill inline.
-    private var showingInlineMusicPeek: Bool {
-        coordinator.expandingView.show
-            && coordinator.expandingView.type == .music
-            && Defaults[.sneakPeekStyles] == .inline
-    }
-
-    /// Width of the black centre section of the closed music pill.
-    ///
-    /// Derived from the real notch width rather than the previous hard-coded
-    /// 380. That constant assumed a particular notch size: the title sits
-    /// left of the cutout and the artist right of it, separated by a spacer
-    /// as wide as the notch itself, so on a wider notch there was no room
-    /// left for the artist and the labels collided. Sizing from
-    /// closedNotchSize keeps a fixed label budget either side whatever the
-    /// hardware is, and keeps liveActivityEdgeMargin in play so content
-    /// clears the bezel — the inline path had dropped it entirely.
-    private var musicActivityCenterWidth: CGFloat {
-        let margin = vm.closedNotchSize.width - 4 + (2 * liveActivityEdgeMargin)
-        guard showingInlineMusicPeek else { return margin }
-        return margin + (2 * inlineMusicPeekLabelWidth)
-    }
-
-    /// Space reserved for the title (left of the cutout) and artist (right).
-    private let inlineMusicPeekLabelWidth: CGFloat = 110
-
-    @ViewBuilder
-    func MusicLiveActivity() -> some View {
-        HStack(spacing: 0) {
-            // Closed-mode album art: scale padding and corner radius according to cornerRadiusScaleFactor
-            let baseArtSize = displayClosedNotchHeight - 12
-            let scaledArtSize: CGFloat = {
-                if let scale = cornerRadiusScaleFactor {
-                    return displayClosedNotchHeight - 12 * scale
-                }
-                return baseArtSize
-            }()
-            // The art's top/bottom gap to the pill; the leading offset below
-            // trims the row's edge slack down to this same inset.
-            let artVerticalInset = (displayClosedNotchHeight - scaledArtSize) / 2
-
-            let closedCornerRadius: CGFloat = {
-                let base = MusicPlayerImageSizes.cornerRadiusInset.closed
-                if let scale = cornerRadiusScaleFactor {
-                    return max(0, base * scale)
-                }
-                return base
-            }()
-
-            Image(nsImage: musicManager.albumArt)
-                .resizable().scaledToFit()
-                .clipShape(
-                    RoundedRectangle(
-                        cornerRadius: closedCornerRadius)
-                )
-                .matchedGeometryEffect(id: "albumArt", in: albumArtNamespace)
-                .frame(
-                    width: scaledArtSize,
-                    height: scaledArtSize
-                )
-                .offset(x: artVerticalInset - liveActivityEdgeMargin)
-
-            Rectangle()
-                .fill(.black)
-                .overlay(
-                    // .center, not .top: the album art beside this is
-                    // vertically centered, so top-aligned labels sat visibly
-                    // high against it.
-                    HStack(alignment: .center) {
-                        if coordinator.expandingView.show
-                            && coordinator.expandingView.type == .music {
-                            MarqueeText(
-                                musicManager.songTitle,
-                                color: Defaults[.coloredSpectrogram]
-                                    ? Color(nsColor: musicManager.avgColor) : Color.gray,
-                                delayDuration: 0.4,
-                                frameWidth: inlineMusicPeekLabelWidth
-                            )
-                            .opacity(
-                                (coordinator.expandingView.show
-                                    && Defaults[.sneakPeekStyles] == .inline)
-                                    ? 1 : 0
-                            )
-                            Spacer(minLength: vm.closedNotchSize.width)
-                            // Song Artist
-                            Text(musicManager.artistName)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                .frame(width: inlineMusicPeekLabelWidth, alignment: .trailing)
-                                .foregroundStyle(
-                                    Defaults[.coloredSpectrogram]
-                                        ? Color(nsColor: musicManager.avgColor)
-                                        : Color.gray
-                                )
-                                .opacity(
-                                    (coordinator.expandingView.show
-                                        && coordinator.expandingView.type == .music
-                                        && Defaults[.sneakPeekStyles] == .inline)
-                                        ? 1 : 0
-                                )
-                        }
-                    }
-                    .padding(.horizontal, 8)
-                )
-                .frame(width: musicActivityCenterWidth)
-
-            HStack {
-                MusicVisualizer(
-                    isPlaying: musicManager.isPlaying,
-                    tintColor: Defaults[.coloredSpectrogram]
-                    ? Color(nsColor: musicManager.avgColor).ensureMinimumBrightness(factor: 0.5)
-                    : Color.gray
-                )
-                .frame(width: 18, height: 12)
-            }
-            .frame(
-                width: max(
-                    0,
-                    displayClosedNotchHeight - 12
-                        + gestureProgress / 2
-                ),
-                height: max(
-                    0,
-                    displayClosedNotchHeight - 12
-                ),
-                alignment: .center
+        .onDrop(
+            of: [.fileURL, .url, .utf8PlainText, .plainText, .data],
+            delegate: GeneralDropTargetDelegate(
+                isTargeted: $dropInteraction.generalDropTargeting
             )
-        }
-        .frame(
-            height: displayClosedNotchHeight,
-            alignment: .center
         )
     }
 
