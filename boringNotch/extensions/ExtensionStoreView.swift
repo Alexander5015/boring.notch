@@ -44,7 +44,7 @@ final class ExtensionStoreModel {
                 }
             }
             if CommandLine.arguments.contains("--tmp-store-install") {
-                Task { @MainActor in if let first = entries.first { await install(first) } }
+                Task { @MainActor in for entry in entries { await install(entry) } }
             }
         } catch {
             NSLog("ExtensionStore: catalog unavailable: %@", error.localizedDescription)
