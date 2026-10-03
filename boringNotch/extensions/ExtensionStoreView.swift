@@ -1,5 +1,6 @@
 
 import ExtensionKit
+import NotchTabHost
 import SwiftUI
 
 @MainActor
@@ -74,6 +75,7 @@ final class ExtensionStoreModel {
                 appName: entry.providerAppName)
             working[entry.id] = .installed
             await confirmRegistration(of: entry)
+            NotchTabRegistry.shared.refresh()
         } catch {
             working[entry.id] = .failed(error.localizedDescription)
         }
@@ -102,6 +104,7 @@ final class ExtensionStoreModel {
         do {
             try await client.uninstall(extensionBundleID: bundleID)
             await confirmRemoval(of: entry)
+            NotchTabRegistry.shared.refresh()
         } catch {
             await refreshInstalled()
             if installedPacks.contains(entry.id) {
