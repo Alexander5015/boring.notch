@@ -153,10 +153,15 @@ final class NotchWindowManager {
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(2))
                 viewModel.open()
-                if CommandLine.arguments.contains("--tmp-select-extension"),
-                   let first = NotchTabRegistry.shared.tabs.first {
-                    BoringViewCoordinator.shared.currentView =
-                        .extensionTab(bundleID: first.bundleID)
+                let arguments = CommandLine.arguments
+                if let flag = arguments.firstIndex(of: "--tmp-select-extension") {
+                    let wanted = flag + 1 < arguments.count ? arguments[flag + 1] : nil
+                    if let tab = NotchTabRegistry.shared.tabs.first(where: {
+                        wanted == nil || $0.bundleID.contains(wanted ?? "")
+                    }) {
+                        BoringViewCoordinator.shared.currentView =
+                            .extensionTab(bundleID: tab.bundleID)
+                    }
                 }
             }
         }

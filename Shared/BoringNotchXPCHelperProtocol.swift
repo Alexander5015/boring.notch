@@ -74,6 +74,8 @@ final class BNLunarBrightnessEvent: NSObject, NSSecureCoding {
 
     func installedExtensionBundleIDs(with reply: @escaping ([String]) -> Void)
 
+    func isExtensionEnabled(_ bundleID: String, with reply: @escaping (Bool) -> Void)
+
     func extensionMetadata(forExtensionBundleID bundleID: String, with reply: @escaping (NSDictionary?) -> Void)
 
     func isExtensionInstalled(_ bundleID: String, with reply: @escaping (Bool) -> Void)

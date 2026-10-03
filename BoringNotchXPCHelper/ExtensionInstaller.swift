@@ -239,6 +239,17 @@ enum ExtensionInstaller {
         return path.map { URL(fileURLWithPath: $0) }
     }
 
+    static func isEnabled(_ bundleID: String) -> Bool {
+        let result = Tool.run("/usr/bin/pluginkit", ["-m", "-v", "-A", "-D", "-i", bundleID])
+        guard result.succeeded else { return false }
+        for line in result.out.split(separator: "\n") {
+            let trimmed = line.drop { $0 == " " }
+            guard let marker = trimmed.first, marker == "+" || marker == "-" else { continue }
+            return marker == "+"
+        }
+        return false
+    }
+
     static func providerPath(forExtensionBundleID bundleID: String) -> String? {
         let fileManager = FileManager.default
         guard let providers = try? fileManager.contentsOfDirectory(

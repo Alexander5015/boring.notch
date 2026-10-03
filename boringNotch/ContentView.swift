@@ -586,6 +586,7 @@ struct ContentView: View {
                             if let tab = registry.tabs.first(where: { $0.bundleID == bundleID }) {
                                 NotchTabHost(
                                     identity: tab.identity,
+                                    sceneID: tab.sceneID,
                                     size: tab.size,
                                     //
                                     maximumSize: nil
