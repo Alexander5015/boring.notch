@@ -228,6 +228,17 @@ enum ExtensionInstaller {
             .filter { !$0.isEmpty }
     }
 
+    static func metadata(forExtensionBundleID bundleID: String) -> [String: Any]? {
+        guard let provider = providerURL(forExtensionBundleID: bundleID),
+              let appex = try? firstExtensionBundle(in: provider) else { return nil }
+        return Bundle(url: appex)?.object(forInfoDictionaryKey: "EXAppExtensionAttributes") as? [String: Any]
+    }
+
+    private static func providerURL(forExtensionBundleID bundleID: String) -> URL? {
+        let path = providerPath(forExtensionBundleID: bundleID)
+        return path.map { URL(fileURLWithPath: $0) }
+    }
+
     static func providerPath(forExtensionBundleID bundleID: String) -> String? {
         let fileManager = FileManager.default
         guard let providers = try? fileManager.contentsOfDirectory(

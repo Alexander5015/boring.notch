@@ -86,6 +86,16 @@ struct ExtensionInstallClient {
     }
 
     @MainActor
+    func metadata(forExtensionBundleID bundleID: String) async -> [String: Any]? {
+        let service = await helper.extensionService()
+        return try? await service.withContinuation { service, continuation in
+            service.extensionMetadata(forExtensionBundleID: bundleID) { reply in
+                continuation.resume(returning: reply as? [String: Any])
+            }
+        }
+    }
+
+    @MainActor
     func isInstalled(extensionBundleID bundleID: String) async -> Bool {
         let service = await helper.extensionService()
         return (try? await service.withContinuation { service, continuation in

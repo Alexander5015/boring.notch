@@ -8,6 +8,8 @@
 import NotchTabHost
 import SwiftUI
 
+let notchTabBarHeight: CGFloat = 26
+
 struct TabModel: Identifiable {
     let label: String
     let icon: String
@@ -50,7 +52,7 @@ struct TabSelectionView: View {
                             coordinator.currentView = tab.view
                         }
                     }
-                    .frame(height: 26)
+                    .frame(height: notchTabBarHeight)
                     .foregroundStyle(tab.view == coordinator.currentView ? .white : .gray)
                     .background {
                         if tab.view == coordinator.currentView {

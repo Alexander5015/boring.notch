@@ -93,10 +93,19 @@ struct DynamicNotchApp: App {
                 for tab in registry.tabs where await client.isInstalled(extensionBundleID: tab.bundleID) {
                     installed.insert(tab.bundleID)
                 }
-                if !registry.tabs.isEmpty || !installed.isEmpty { break }
+                if !installed.isEmpty { break }
                 try? await Task.sleep(for: .milliseconds(250))
             }
-            registry.installedBundleIDs = installed
+            registry.installedBundleIDs = installed.isEmpty ? nil : installed
+
+            var metadata: [String: [String: Any]] = [:]
+            for tab in registry.tabs {
+                if let attributes = await client.metadata(forExtensionBundleID: tab.bundleID) {
+                    metadata[tab.bundleID] = attributes
+                }
+            }
+            registry.suppliedMetadata = metadata
+            registry.refresh()
         }
 
         if let spec = Self.pendingInstallSpec {

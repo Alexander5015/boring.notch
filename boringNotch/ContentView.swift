@@ -587,15 +587,10 @@ struct ContentView: View {
                                 NotchTabHost(
                                     identity: tab.identity,
                                     size: tab.size,
-                                    maximumSize: CGSize(
-                                        width: openNotchSize.width,
-                                        height: openNotchSize.height
-                                            - cornerRadiusInsets.opened.top
-                                            - cornerRadiusInsets.opened.bottom)
+                                    //
+                                    maximumSize: nil
                                 )
                                 .id(tab.bundleID)
-                                //
-                                .padding(.top, showsHeader ? max(38, displayClosedNotchHeight) : 0)
                                     .ignoresSafeArea(.container, edges: .all)
                             } else {
                                 ContentUnavailableView(

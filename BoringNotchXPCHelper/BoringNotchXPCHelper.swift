@@ -554,6 +554,13 @@ extension BoringNotchXPCHelper {
         reply(ExtensionInstaller.providerPath(forExtensionBundleID: bundleID))
     }
 
+    @objc func extensionMetadata(
+        forExtensionBundleID bundleID: String,
+        with reply: @escaping (NSDictionary?) -> Void
+    ) {
+        reply(ExtensionInstaller.metadata(forExtensionBundleID: bundleID) as NSDictionary?)
+    }
+
     @objc func installedExtensionBundleIDs(with reply: @escaping ([String]) -> Void) {
         reply(ExtensionInstaller.installedExtensionBundleIDs())
     }
