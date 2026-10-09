@@ -134,6 +134,9 @@ final class BoringViewCoordinator: ObservableObject {
             Task { @MainActor in
                 let authorized = await XPCHelperClient.shared.isAccessibilityAuthorized()
                 if authorized {
+                    // Authorization may have changed after the event tap stopped itself.
+                    // Force one reconciliation attempt instead of trusting the previous flag.
+                    self?.isMediaKeyInterceptorRequested = false
                     self?.applyOSDSources()
                     if Defaults[.notificationLiveActivity] {
                         await SystemNotificationManager.shared.start()
