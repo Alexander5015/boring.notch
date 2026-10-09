@@ -42,16 +42,22 @@ struct QuickShareProvider: Identifiable, Hashable, Sendable {
 private actor ApplicationIconIndex {
     private var cachedURLsByName: [String: URL]?
 
-    func urlsByName() -> [String: URL] {
+    func urlsByName() -> [String: URL]? {
+        guard !Task.isCancelled else { return nil }
         if let cachedURLsByName {
             return cachedURLsByName
         }
 
         var urlsByName: [String: URL] = [:]
         for root in Self.applicationSearchRoots {
-            Self.indexApplications(in: root, into: &urlsByName)
+            guard !Task.isCancelled,
+                  Self.indexApplications(in: root, into: &urlsByName)
+            else {
+                return nil
+            }
         }
 
+        guard !Task.isCancelled else { return nil }
         cachedURLsByName = urlsByName
         return urlsByName
     }
@@ -76,19 +82,21 @@ private actor ApplicationIconIndex {
         return roots
     }
 
-    private static func indexApplications(in root: URL, into urlsByName: inout [String: URL]) {
+    private static func indexApplications(in root: URL, into urlsByName: inout [String: URL]) -> Bool {
         guard FileManager.default.fileExists(atPath: root.path),
               let enumerator = FileManager.default.enumerator(
                 at: root,
                 includingPropertiesForKeys: [.isApplicationKey, .localizedNameKey],
                 options: [.skipsHiddenFiles, .skipsPackageDescendants]
               ) else {
-            return
+            return !Task.isCancelled
         }
 
         for case let url as URL in enumerator where url.pathExtension == "app" {
+            guard !Task.isCancelled else { return false }
             indexApplication(url, into: &urlsByName)
         }
+        return !Task.isCancelled
     }
 
     private static func indexApplication(_ applicationURL: URL, into urlsByName: inout [String: URL]) {
@@ -236,12 +244,12 @@ final class QuickShareService: ObservableObject {
             return resizedIcon(providerIcon, to: size)
         }
 
-        warmApplicationIconCacheIfNeeded()
-
-        // For system share menu, return a generic share icon
+        // The generic icon does not need the expensive installed-app index.
         if providerId == QuickShareProvider.systemShareMenuId {
             return NSImage(systemSymbolName: "square.and.arrow.up", accessibilityDescription: "Share")
         }
+
+        warmApplicationIconCacheIfNeeded()
 
         // Try to get icon from cached service
         if let service = cachedServices[providerId] {
@@ -265,9 +273,9 @@ final class QuickShareService: ObservableObject {
 
         let index = applicationIconIndex
         iconCacheTask = Task(priority: .utility) { @MainActor [weak self, index] in
-            let urlsByName = await index.urlsByName()
-            guard !Task.isCancelled, let self, self.isActive else { return }
-            self.cachedApplicationURLsByName = urlsByName
+            let indexedURLs = await index.urlsByName()
+            guard !Task.isCancelled, let self, self.isActive, let indexedURLs else { return }
+            self.cachedApplicationURLsByName = indexedURLs
             self.isApplicationIconCacheLoading = false
             self.iconCacheTask = nil
         }
