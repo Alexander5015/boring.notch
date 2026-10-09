@@ -18,24 +18,13 @@ struct QuickShareProvider: Identifiable, Hashable, Sendable {
     var id: String
     var supportsRawText: Bool
 
-    /// AirDrop remains the preferred default; the UI resolves this against
-    /// providers discovered when Quick Share is actually used.
+    /// Preserve the existing default without forcing provider discovery.
     static var defaultProvider: QuickShareProvider {
-        QuickShareProvider(id: airDropId, supportsRawText: false)
-    }
-
-    static func preferredProvider(from providers: [QuickShareProvider]) -> QuickShareProvider {
-        providers.first(where: { $0.id == airDropId })
-            ?? providers.first
-            ?? .systemShareMenu
+        .systemShareMenu
     }
 
     static func resolve(selectedID: String, from providers: [QuickShareProvider]) -> QuickShareProvider {
-        if let selected = providers.first(where: { $0.id == selectedID }) {
-            return selected
-        }
-        guard selectedID == defaultProvider.id else { return .systemShareMenu }
-        return preferredProvider(from: providers)
+        providers.first(where: { $0.id == selectedID }) ?? .systemShareMenu
     }
 }
 
