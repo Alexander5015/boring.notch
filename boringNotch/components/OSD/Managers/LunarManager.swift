@@ -20,6 +20,10 @@ final class LunarManager {
     private var eventListener: LunarEventListener?
     private var listeningGeneration = UUID()
     private var startTask: Task<Void, Never>?
+    private var stopTask: Task<Void, Never>?
+    private var stopTaskGeneration: UUID?
+    private var configurationGeneration = UUID()
+    private var configurationTask: Task<Void, Never>?
     private var availabilityGeneration = UUID()
 
     private init() {
@@ -49,15 +53,29 @@ final class LunarManager {
         listeningGeneration = generation
         let listener = eventListener ?? LunarEventListener(manager: self)
         eventListener = listener
+        let pendingStop = stopTask
 
-        startTask = Task { [weak self, listener] in
-            let started = await XPCHelperClient.shared.startLunarEventStream(listener: listener)
-            guard let self else {
-                if started {
-                    await XPCHelperClient.shared.stopLunarEventStream()
+        startTask = Task { [weak self, listener, pendingStop] in
+            // Serialize start behind any teardown already in progress. This
+            // prevents a late stop from shutting down a newly opened stream.
+            await pendingStop?.value
+            guard !Task.isCancelled else {
+                await MainActor.run {
+                    if let self, self.listeningGeneration == generation {
+                        self.startTask = nil
+                    }
                 }
                 return
             }
+
+            let isCurrent = await MainActor.run { () -> Bool in
+                guard let self else { return false }
+                return self.listeningGeneration == generation
+            }
+            guard isCurrent else { return }
+
+            let started = await XPCHelperClient.shared.startLunarEventStream(listener: listener)
+            guard let self else { return }
 
             let shouldKeepStream = await MainActor.run { () -> Bool in
                 guard self.listeningGeneration == generation else { return false }
@@ -67,8 +85,8 @@ final class LunarManager {
                 return true
             }
 
-            // stopListening can win while the XPC start request is in flight.
-            // Ensure a late completion cannot leave an orphaned event stream.
+            // A stop request can arrive while XPC is starting the stream.
+            // The serialized stop task will complete before any new start.
             if !shouldKeepStream && started {
                 await XPCHelperClient.shared.stopLunarEventStream()
             }
@@ -79,19 +97,56 @@ final class LunarManager {
         guard isListening || startTask != nil else { return }
 
         listeningGeneration = UUID()
+        let generation = listeningGeneration
+        let pendingStart = startTask
+        let previousStop = stopTask
         startTask?.cancel()
         startTask = nil
         isListening = false
 
-        Task {
+        let stopID = UUID()
+        stopTaskGeneration = stopID
+        stopTask = Task { [weak self, pendingStart, previousStop] in
+            await previousStop?.value
+            await pendingStart?.value
             await XPCHelperClient.shared.stopLunarEventStream()
+
+            await MainActor.run {
+                guard let self, self.stopTaskGeneration == stopID else { return }
+                self.stopTask = nil
+                self.stopTaskGeneration = nil
+                if self.listeningGeneration == generation {
+                    self.isListening = false
+                }
+            }
         }
     }
 
     func configureLunarOSD(hide: Bool) {
         guard hide != lastOSDHidden else { return }
         lastOSDHidden = hide
-        Task { _ = await XPCHelperClient.shared.setLunarOSDHidden(hide) }
+        configurationGeneration = UUID()
+        let generation = configurationGeneration
+        let previousTask = configurationTask
+
+        configurationTask = Task { [weak self, previousTask] in
+            // Ensure restore/hide requests reach the helper in order. Tasks
+            // superseded before dispatch simply skip their outdated command.
+            await previousTask?.value
+            guard !Task.isCancelled else { return }
+
+            let isCurrent = await MainActor.run { () -> Bool in
+                guard let self else { return false }
+                return self.configurationGeneration == generation
+            }
+            guard isCurrent else { return }
+
+            _ = await XPCHelperClient.shared.setLunarOSDHidden(hide)
+            await MainActor.run {
+                guard let self, self.configurationGeneration == generation else { return }
+                self.configurationTask = nil
+            }
+        }
     }
 
     // MARK: - Brightness Handling
