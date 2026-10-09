@@ -150,6 +150,10 @@ final class MediaKeyInterceptor {
 
         runLoopSource = nil
         eventTap = nil
+
+        // Keep decoded feedback audio only while the OSD controls are active.
+        audioPlayer?.stop()
+        audioPlayer = nil
     }
 
     private func reenableEventTap(after type: CGEventType) {
