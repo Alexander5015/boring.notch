@@ -141,10 +141,13 @@ final class LunarManager {
             }
             guard isCurrent else { return }
 
-            _ = await XPCHelperClient.shared.setLunarOSDHidden(hide)
+            let succeeded = await XPCHelperClient.shared.setLunarOSDHidden(hide)
             await MainActor.run {
                 guard let self, self.configurationGeneration == generation else { return }
                 self.configurationTask = nil
+                if !succeeded {
+                    self.lastOSDHidden = nil
+                }
             }
         }
     }
