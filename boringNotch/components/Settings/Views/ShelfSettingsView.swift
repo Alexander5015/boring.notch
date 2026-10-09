@@ -15,15 +15,7 @@ struct ShelfSettingsView: View {
     @StateObject private var quickShareService = QuickShareService()
 
     private var selectedProvider: QuickShareProvider? {
-        if let selected = quickShareService.availableProviders.first(where: { $0.id == quickShareProvider }) {
-            return selected
-        }
-        guard quickShareProvider == QuickShareProvider.defaultProvider.id,
-              !quickShareService.availableProviders.isEmpty
-        else {
-            return nil
-        }
-        return QuickShareProvider.preferredProvider(from: quickShareService.availableProviders)
+        quickShareService.availableProviders.first(where: { $0.id == quickShareProvider })
     }
 
     private var providerSelection: Binding<String> {
