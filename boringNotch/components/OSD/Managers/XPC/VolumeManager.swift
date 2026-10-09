@@ -64,6 +64,7 @@ final class VolumeManager: NSObject, ObservableObject {
     private var listenerRegistrations: [ListenerRegistration] = []
     private var deviceChangeRegistration: ListenerRegistration?
     private var isObserving = false
+    private var writeGeneration: UInt64 = 0
     private var writeFlushWorkItem: DispatchWorkItem?
 
     override private init() {
@@ -84,6 +85,7 @@ final class VolumeManager: NSObject, ObservableObject {
         audioQueue.async { [self] in
             guard isObserving else { return }
             isObserving = false
+            writeGeneration &+= 1
 
             if let registration = deviceChangeRegistration {
                 var address = registration.address
@@ -194,8 +196,12 @@ final class VolumeManager: NSObject, ObservableObject {
             guard !writeFlushScheduled else { return }
             writeFlushScheduled = true
 
+            let generation = writeGeneration
             let workItem = DispatchWorkItem { [weak self] in
-                guard let self, self.isObserving else { return }
+                guard let self,
+                      self.isObserving,
+                      self.writeGeneration == generation
+                else { return }
                 self.writeFlushScheduled = false
                 self.writeFlushWorkItem = nil
                 guard let target = self.pendingWriteTarget else { return }
