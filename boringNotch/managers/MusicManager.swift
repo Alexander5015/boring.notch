@@ -7,12 +7,37 @@
 import AppKit
 import Combine
 import Defaults
+import ImageIO
 import SwiftUI
 
 let defaultImage: NSImage = .init(
     systemSymbolName: "heart.fill",
     accessibilityDescription: "Album Art"
 )!
+
+/// Creates a thumbnail-sized decoded bitmap for album art.
+/// ImageIO can downsample during decode, avoiding a full-resolution pixel buffer.
+private func downsampleArtworkImage(from data: Data, maxPixelSize: Int = 512) -> NSImage? {
+    guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+        return nil
+    }
+
+    let options: [CFString: Any] = [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceShouldCacheImmediately: true
+    ]
+
+    guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+        return nil
+    }
+
+    return NSImage(
+        cgImage: image,
+        size: NSSize(width: image.width, height: image.height)
+    )
+}
 
 struct NowPlayingFallbackNotice: Identifiable, Equatable {
     let id = UUID()
@@ -657,12 +682,13 @@ final class MusicManager: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
 
-            if let artworkImage = NSImage(data: artworkData) {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self, self.artworkData == artworkData else { return }
-                    self.usingAppIconForArtwork = false
-                    self.updateAlbumArt(newAlbumArt: artworkImage)
-                }
+            // Decode at a bounded size before handing artwork to SwiftUI/AppKit.
+            guard let artworkImage = downsampleArtworkImage(from: artworkData) else { return }
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.artworkData == artworkData else { return }
+                self.usingAppIconForArtwork = false
+                self.updateAlbumArt(newAlbumArt: artworkImage)
             }
         }
     }
