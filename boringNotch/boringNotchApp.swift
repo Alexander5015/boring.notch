@@ -131,7 +131,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let camera = CameraModel()
     var statusItem: NSStatusItem?
     @ObservedObject var coordinator = BoringViewCoordinator.shared
-    var quickShareService = QuickShareService.shared
     var closeNotchTask: Task<Void, Never>?
     private lazy var windowManager = NotchWindowManager(camera: camera)
     private var onboardingWindowController: NSWindowController?
