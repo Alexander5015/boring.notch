@@ -49,13 +49,14 @@ final class MediaKeyInterceptor {
 
     // MARK: - Event Tap
 
-    func start(promptIfNeeded: Bool = false) async {
+    @discardableResult
+    func start(promptIfNeeded: Bool = false) async -> Bool {
         let generation = lifecycleGeneration
 
         // Ensure OSD replacement is enabled
         guard Defaults[.osdReplacement] else {
             stop()
-            return
+            return false
         }
 
         // Only require Accessibility if any selected source uses the built-in controls
@@ -65,7 +66,7 @@ final class MediaKeyInterceptor {
             guard generation == lifecycleGeneration,
                   !Task.isCancelled,
                   Defaults[.osdReplacement]
-            else { return }
+            else { return false }
             if !authorized {
                 if promptIfNeeded {
                     let granted = await ensureAccessibilityAuthorization(promptIfNeeded: true)
@@ -73,9 +74,9 @@ final class MediaKeyInterceptor {
                           generation == lifecycleGeneration,
                           !Task.isCancelled,
                           Defaults[.osdReplacement]
-                    else { return }
+                    else { return false }
                 } else {
-                    return
+                    return false
                 }
             }
         }
@@ -83,11 +84,11 @@ final class MediaKeyInterceptor {
         guard generation == lifecycleGeneration,
               !Task.isCancelled,
               Defaults[.osdReplacement]
-        else { return }
+        else { return false }
 
         if let eventTap, isTapActive {
             CGEvent.tapEnable(tap: eventTap, enable: true)
-            return
+            return true
         }
 
         if eventTap != nil || runLoopSource != nil {
@@ -129,6 +130,12 @@ final class MediaKeyInterceptor {
         } else {
             Log.osd.error("⚠️ [MediaKeyInterceptor] Failed to create media-key event tap")
         }
+
+        guard isTapActive else {
+            stop()
+            return false
+        }
+        return true
     }
 
     func stop() {
