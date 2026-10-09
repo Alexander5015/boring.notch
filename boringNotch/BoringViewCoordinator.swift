@@ -344,8 +344,9 @@ final class BoringViewCoordinator: ObservableObject {
             let generation = osdLifecycleGeneration
             isMediaKeyInterceptorRequested = true
             osdEnableTask = Task { @MainActor [weak self] in
-                await MediaKeyInterceptor.shared.start(promptIfNeeded: false)
+                let started = await MediaKeyInterceptor.shared.start(promptIfNeeded: false)
                 guard let self, self.osdLifecycleGeneration == generation else { return }
+                self.isMediaKeyInterceptorRequested = started
                 self.osdEnableTask = nil
             }
         }
