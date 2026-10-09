@@ -177,12 +177,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             screenUnlockedObserver = nil
         }
         MainActor.assumeIsolated {
+            coordinator.stopOSDIntegrations()
             MusicManager.shared.destroy()
             windowManager.cleanup()
         }
-        BetterDisplayManager.shared.stopObserving()
-        LunarManager.shared.stopListening()
-        LunarManager.shared.configureLunarOSD(hide: false)
         XPCHelperClient.shared.stopMonitoringAccessibilityAuthorization()
 
         observers.forEach { NotificationCenter.default.removeObserver($0) }

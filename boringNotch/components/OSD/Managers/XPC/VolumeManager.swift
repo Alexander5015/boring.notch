@@ -60,15 +60,54 @@ final class VolumeManager: NSObject, ObservableObject {
         var address: AudioObjectPropertyAddress
         var block: AudioObjectPropertyListenerBlock
     }
+    /// All registrations and this flag are confined to audioQueue.
     private var listenerRegistrations: [ListenerRegistration] = []
+    private var deviceChangeRegistration: ListenerRegistration?
+    private var isObserving = false
+    private var writeFlushWorkItem: DispatchWorkItem?
 
     override private init() {
         super.init()
-        installDeviceChangeListener()
+    }
+
+    func startObserving() {
         audioQueue.async { [self] in
+            guard !isObserving else { return }
+            isObserving = true
+            installDeviceChangeListenerLocked()
             rebuildSnapshotLocked()
             syncFromDeviceLocked()
         }
+    }
+
+    func stopObserving() {
+        audioQueue.async { [self] in
+            guard isObserving else { return }
+            isObserving = false
+
+            if let registration = deviceChangeRegistration {
+                var address = registration.address
+                AudioObjectRemovePropertyListenerBlock(
+                    registration.deviceID, &address, audioQueue, registration.block)
+                deviceChangeRegistration = nil
+            }
+
+            removeDeviceListenersLocked()
+            writeFlushWorkItem?.cancel()
+            writeFlushWorkItem = nil
+            pendingWriteTarget = nil
+            writeFlushScheduled = false
+            snapshot = DeviceSnapshot()
+        }
+    }
+
+    private func removeDeviceListenersLocked() {
+        for registration in listenerRegistrations {
+            var address = registration.address
+            AudioObjectRemovePropertyListenerBlock(
+                registration.deviceID, &address, audioQueue, registration.block)
+        }
+        listenerRegistrations.removeAll(keepingCapacity: false)
     }
 
     var shouldShowOverlay: Bool { Date().timeIntervalSince(lastChangeAt) < visibleDuration }
@@ -150,22 +189,28 @@ final class VolumeManager: NSObject, ObservableObject {
     /// flushes the *latest* requested target.
     private func requestVolumeWrite(_ value: Float32) {
         audioQueue.async { [self] in
+            guard isObserving else { return }
             pendingWriteTarget = value
             guard !writeFlushScheduled else { return }
             writeFlushScheduled = true
-            audioQueue.asyncAfter(deadline: .now() + writeFlushInterval) { [self] in
-                writeFlushScheduled = false
-                guard let target = pendingWriteTarget else { return }
-                pendingWriteTarget = nil
-                writeVolumeLocked(target)
-                syncFromDeviceLocked()
+
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self, self.isObserving else { return }
+                self.writeFlushScheduled = false
+                self.writeFlushWorkItem = nil
+                guard let target = self.pendingWriteTarget else { return }
+                self.pendingWriteTarget = nil
+                self.writeVolumeLocked(target)
+                self.syncFromDeviceLocked()
             }
+            writeFlushWorkItem = workItem
+            audioQueue.asyncAfter(deadline: .now() + writeFlushInterval, execute: workItem)
         }
     }
 
     private func enqueueHardwareMute(_ muted: Bool) {
         audioQueue.async { [self] in
-            guard snapshot.supportsMute else { return }
+            guard isObserving, snapshot.supportsMute else { return }
             var value: UInt32 = muted ? 1 : 0
             var addr = AudioObjectPropertyAddress(
                 mSelector: kAudioDevicePropertyMute,
@@ -184,12 +229,8 @@ final class VolumeManager: NSObject, ObservableObject {
     /// attaches volume/mute listeners to it. CoreAudio delivers every
     /// subsequent change event-driven, so steady state costs zero polling.
     private func rebuildSnapshotLocked() {
-        for registration in listenerRegistrations {
-            var address = registration.address
-            AudioObjectRemovePropertyListenerBlock(
-                registration.deviceID, &address, audioQueue, registration.block)
-        }
-        listenerRegistrations.removeAll()
+        guard isObserving else { return }
+        removeDeviceListenersLocked()
 
         let deviceID = systemOutputDeviceID()
         var snap = DeviceSnapshot(deviceID: deviceID)
@@ -238,27 +279,30 @@ final class VolumeManager: NSObject, ObservableObject {
             ListenerRegistration(deviceID: deviceID, address: address, block: block))
     }
 
-    /// The system-object device-change listener is permanent (registered
-    /// once) and is delivered on audioQueue like every other callback.
-    private func installDeviceChangeListener() {
+    /// The system-object listener is installed only while OSD replacement is active.
+    private func installDeviceChangeListenerLocked() {
+        guard deviceChangeRegistration == nil else { return }
+        let deviceID = AudioObjectID(kAudioObjectSystemObject)
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDefaultOutputDevice,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
-        AudioObjectAddPropertyListenerBlock(
-            AudioObjectID(kAudioObjectSystemObject), &address, audioQueue
-        ) { [weak self] _, _ in
+        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             self?.rebuildSnapshotLocked()
             self?.syncFromDeviceLocked()
         }
+        guard AudioObjectAddPropertyListenerBlock(deviceID, &address, audioQueue, block) == noErr else {
+            return
+        }
+        deviceChangeRegistration = ListenerRegistration(deviceID: deviceID, address: address, block: block)
     }
 
     /// Reads ground truth using the cached snapshot (no Has/GetSize
     /// probing, unlike the old fetch path) and mirrors it to the published
     /// main-side state.
     private func syncFromDeviceLocked() {
-        guard snapshot.deviceID != kAudioObjectUnknown else { return }
+        guard isObserving, snapshot.deviceID != kAudioObjectUnknown else { return }
         let volume = readVolumeLocked()
         let muted = snapshot.supportsMute ? readMuteLocked() : nil
         DispatchQueue.main.async { [self] in

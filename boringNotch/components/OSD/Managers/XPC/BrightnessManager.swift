@@ -25,15 +25,30 @@ final class BrightnessManager: ObservableObject {
 	private var cachedTargetUUID: String?
 	private var screenParametersObserver: (any NSObjectProtocol)?
 
-	private init() {
-		refresh()
-		screenParametersObserver = NotificationCenter.default.addObserver(
-			forName: NSApplication.didChangeScreenParametersNotification,
-			object: nil,
-			queue: .main
-		) { [weak self] _ in
-			self?.cachedTargetUUID = nil
+	private init() {}
+
+	func startObserving() {
+		if screenParametersObserver == nil {
+			screenParametersObserver = NotificationCenter.default.addObserver(
+				forName: NSApplication.didChangeScreenParametersNotification,
+				object: nil,
+				queue: .main
+			) { [weak self] _ in
+				self?.cachedTargetUUID = nil
+			}
 		}
+		refresh()
+	}
+
+	func stopObserving() {
+		if let screenParametersObserver {
+			NotificationCenter.default.removeObserver(screenParametersObserver)
+			self.screenParametersObserver = nil
+		}
+		cachedTargetUUID = nil
+		pendingDelta = 0
+		flushTask?.cancel()
+		flushTask = nil
 	}
 
 	/// Determine which screen UUID should be used for brightness OSDs

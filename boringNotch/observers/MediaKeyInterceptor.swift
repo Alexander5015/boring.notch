@@ -27,6 +27,7 @@ final class MediaKeyInterceptor {
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private var lifecycleGeneration: UInt64 = 0
     private let step: Float = 1.0 / 16.0
     private var audioPlayer: AVAudioPlayer?
 
@@ -49,6 +50,8 @@ final class MediaKeyInterceptor {
     // MARK: - Event Tap
 
     func start(promptIfNeeded: Bool = false) async {
+        let generation = lifecycleGeneration
+
         // Ensure OSD replacement is enabled
         guard Defaults[.osdReplacement] else {
             stop()
@@ -59,15 +62,28 @@ final class MediaKeyInterceptor {
         let needsAccessibility = Defaults[.osdBrightnessSource] == .builtin || Defaults[.osdVolumeSource] == .builtin
         if needsAccessibility {
             let authorized = await XPCHelperClient.shared.isAccessibilityAuthorized()
+            guard generation == lifecycleGeneration,
+                  !Task.isCancelled,
+                  Defaults[.osdReplacement]
+            else { return }
             if !authorized {
                 if promptIfNeeded {
                     let granted = await ensureAccessibilityAuthorization(promptIfNeeded: true)
-                    guard granted else { return }
+                    guard granted,
+                          generation == lifecycleGeneration,
+                          !Task.isCancelled,
+                          Defaults[.osdReplacement]
+                    else { return }
                 } else {
                     return
                 }
             }
         }
+
+        guard generation == lifecycleGeneration,
+              !Task.isCancelled,
+              Defaults[.osdReplacement]
+        else { return }
 
         if let eventTap, isTapActive {
             CGEvent.tapEnable(tap: eventTap, enable: true)
@@ -116,6 +132,7 @@ final class MediaKeyInterceptor {
     }
 
     func stop() {
+        lifecycleGeneration &+= 1
         if let eventTap {
             CGEvent.tapEnable(tap: eventTap, enable: false)
             CFMachPortInvalidate(eventTap)

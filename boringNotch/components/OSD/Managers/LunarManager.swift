@@ -18,27 +18,24 @@ final class LunarManager {
 
     private var lastOSDHidden: Bool?
     private var eventListener: LunarEventListener?
+    private var listeningGeneration = UUID()
+    private var startTask: Task<Void, Never>?
+    private var availabilityGeneration = UUID()
 
     private init() {
         refreshAvailability()
-        NotificationCenter.default.addObserver(
-            forName: NSApplication.willTerminateNotification,
-            object: nil,
-            queue: .main
-        ) { _ in
-            Task {
-                _ = await XPCHelperClient.shared.setLunarOSDHidden(false)
-            }
-        }
     }
 
     // MARK: - Availability
 
     func refreshAvailability() {
+        let generation = UUID()
+        availabilityGeneration = generation
         Task.detached { [weak self] in
             let available = await XPCHelperClient.shared.isLunarAvailable()
             await MainActor.run {
-                self?.isLunarAvailable = available
+                guard let self, self.availabilityGeneration == generation else { return }
+                self.isLunarAvailable = available
             }
         }
     }
@@ -46,27 +43,48 @@ final class LunarManager {
     // MARK: - Listening
 
     func startListening() {
-        if isListening { return }
+        guard !isListening, startTask == nil else { return }
 
+        let generation = UUID()
+        listeningGeneration = generation
         let listener = eventListener ?? LunarEventListener(manager: self)
         eventListener = listener
 
-        Task.detached { [weak self] in
-            guard let self else { return }
+        startTask = Task { [weak self, listener] in
             let started = await XPCHelperClient.shared.startLunarEventStream(listener: listener)
-            await MainActor.run {
+            guard let self else {
+                if started {
+                    await XPCHelperClient.shared.stopLunarEventStream()
+                }
+                return
+            }
+
+            let shouldKeepStream = await MainActor.run { () -> Bool in
+                guard self.listeningGeneration == generation else { return false }
+                self.startTask = nil
                 self.isListening = started
                 self.isLunarAvailable = started
+                return true
+            }
+
+            // stopListening can win while the XPC start request is in flight.
+            // Ensure a late completion cannot leave an orphaned event stream.
+            if !shouldKeepStream && started {
+                await XPCHelperClient.shared.stopLunarEventStream()
             }
         }
     }
 
     func stopListening() {
-        Task.detached { [weak self] in
+        guard isListening || startTask != nil else { return }
+
+        listeningGeneration = UUID()
+        startTask?.cancel()
+        startTask = nil
+        isListening = false
+
+        Task {
             await XPCHelperClient.shared.stopLunarEventStream()
-            await MainActor.run {
-                self?.isListening = false
-            }
         }
     }
 
@@ -122,6 +140,9 @@ final class LunarManager {
 
     fileprivate func handleLunarStreamStopped(reason: String?) {
         Task { @MainActor in
+            self.listeningGeneration = UUID()
+            self.startTask?.cancel()
+            self.startTask = nil
             self.isListening = false
             if reason != nil {
                 self.isLunarAvailable = false

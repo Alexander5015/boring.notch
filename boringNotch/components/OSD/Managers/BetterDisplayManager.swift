@@ -41,19 +41,13 @@ final class BetterDisplayManager {
     private(set) var lastChangeAt: Date = .distantPast
 
     private let visibleDuration: TimeInterval = 1.2
-    private var observers: [NSObjectProtocol] = []
+    private var isObserving = false
+    private var osdObserver: NSObjectProtocol?
+    private var launchObserver: NSObjectProtocol?
+    private var quitObserver: NSObjectProtocol?
 
     private init() {
         checkBetterDisplayAvailability()
-
-        let terminationObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.willTerminateNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.configureBetterDisplayIntegration(enabled: false)
-        }
-        observers.append(terminationObserver)
     }
 
     deinit { stopObserving() }
@@ -73,20 +67,24 @@ final class BetterDisplayManager {
     // MARK: - Notification Observing
 
     func startObserving() {
-        stopObserving()
         checkBetterDisplayAvailability()
+        guard !isObserving else {
+            configureBetterDisplayIntegration(enabled: true)
+            return
+        }
+
+        isObserving = true
         configureBetterDisplayIntegration(enabled: true)
 
-        let osdObserver = DistributedNotificationCenter.default().addObserver(
+        osdObserver = DistributedNotificationCenter.default().addObserver(
             forName: NSNotification.Name("com.betterdisplay.BetterDisplay.osd"),
             object: nil,
             queue: .main
         ) { [weak self] notification in
             Task { await self?.handleOsdNotification(notification) }
         }
-        observers.append(osdObserver)
 
-        let launchObserver = NSWorkspace.shared.notificationCenter.addObserver(
+        launchObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didLaunchApplicationNotification,
             object: nil,
             queue: .main
@@ -97,9 +95,8 @@ final class BetterDisplayManager {
                 self?.configureBetterDisplayIntegration(enabled: true)
             }
         }
-        observers.append(launchObserver)
 
-        let quitObserver = NSWorkspace.shared.notificationCenter.addObserver(
+        quitObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didTerminateApplicationNotification,
             object: nil,
             queue: .main
@@ -109,19 +106,25 @@ final class BetterDisplayManager {
                 self?.isBetterDisplayAvailable = false
             }
         }
-        observers.append(quitObserver)
     }
 
     func stopObserving() {
+        guard isObserving else { return }
+        isObserving = false
         configureBetterDisplayIntegration(enabled: false)
-        guard !observers.isEmpty else { return }
-        let distributed = DistributedNotificationCenter.default()
-        let workspace = NSWorkspace.shared.notificationCenter
-        observers.forEach {
-            distributed.removeObserver($0)
-            workspace.removeObserver($0)
+
+        if let osdObserver {
+            DistributedNotificationCenter.default().removeObserver(osdObserver)
+            self.osdObserver = nil
         }
-        observers.removeAll()
+        if let launchObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(launchObserver)
+            self.launchObserver = nil
+        }
+        if let quitObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(quitObserver)
+            self.quitObserver = nil
+        }
     }
 
     // MARK: - OSD Notification Handler

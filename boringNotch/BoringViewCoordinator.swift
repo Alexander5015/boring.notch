@@ -48,6 +48,15 @@ final class BoringViewCoordinator: ObservableObject {
     @Published var currentView: NotchViews = .home
     @Published var helloAnimationRunning: Bool = false
     private var osdEnableTask: Task<Void, Never>?
+    private var osdLifecycleGeneration: UInt64 = 0
+    private var isMediaKeyInterceptorRequested = false
+    private var isBrightnessManagerObserving = false
+    private var isVolumeManagerObserving = false
+    private var isBetterDisplayObserving = false
+    private var isLunarListening = false
+    private var isLunarOSDHidden = false
+    private var lastOSDBrightnessSource: OSDControlSource?
+    private var lastOSDVolumeSource: OSDControlSource?
 
     @AppStorage("firstLaunch") var firstLaunch: Bool = true
     @AppStorage("musicLiveActivityEnabled") var musicLiveActivityEnabled: Bool = true
@@ -125,14 +134,12 @@ final class BoringViewCoordinator: ObservableObject {
             Task { @MainActor in
                 let authorized = await XPCHelperClient.shared.isAccessibilityAuthorized()
                 if authorized {
-                    if Defaults[.osdReplacement] {
-                        await MediaKeyInterceptor.shared.start(promptIfNeeded: false)
-                    }
+                    self?.applyOSDSources()
                     if Defaults[.notificationLiveActivity] {
                         await SystemNotificationManager.shared.start()
                     }
                 } else {
-                    MediaKeyInterceptor.shared.stop()
+                    self?.stopMediaKeyInterception()
                     SystemNotificationManager.shared.stop()
                 }
             }
@@ -160,22 +167,9 @@ final class BoringViewCoordinator: ObservableObject {
 
         // Observe changes to osdReplacement
         osdReplacementCancellable = Defaults.publisher(.osdReplacement)
-            .sink { [weak self] change in
+            .sink { [weak self] _ in
                 Task { @MainActor in
-                    guard let self = self else { return }
-
-                    self.osdEnableTask?.cancel()
-                    self.osdEnableTask = nil
-
-                    if change.newValue {
-                        self.osdEnableTask = Task { @MainActor in
-                            await MediaKeyInterceptor.shared.start(promptIfNeeded: false)
-                        }
-                    } else {
-                        MediaKeyInterceptor.shared.stop()
-                    }
-
-                    self.applyOSDSources()
+                    self?.applyOSDSources()
                 }
             }
         // Observe changes to any of the OSD source selections
@@ -208,10 +202,6 @@ final class BoringViewCoordinator: ObservableObject {
 
         Task { @MainActor in
             helloAnimationRunning = firstLaunch
-
-            if Defaults[.osdReplacement] {
-                await MediaKeyInterceptor.shared.start(promptIfNeeded: false)
-            }
 
             if Defaults[.notificationLiveActivity] {
                 await SystemNotificationManager.shared.start()
@@ -289,44 +279,117 @@ final class BoringViewCoordinator: ObservableObject {
         }
     }
 
-     func applyOSDSources() {
-        if NotchSpaceManager.shared.notchSpace.windows.isEmpty {
-            BetterDisplayManager.shared.stopObserving()
-            LunarManager.shared.stopListening()
-            LunarManager.shared.configureLunarOSD(hide: false)
-            MediaKeyInterceptor.shared.stop()
+    @MainActor
+    func applyOSDSources() {
+        guard Defaults[.osdReplacement],
+              !NotchSpaceManager.shared.notchSpace.windows.isEmpty
+        else {
+            stopOSDIntegrations()
             return
         }
 
-        guard Defaults[.osdReplacement] else {
-            BetterDisplayManager.shared.stopObserving()
-            LunarManager.shared.stopListening()
-            LunarManager.shared.configureLunarOSD(hide: false)
-            MediaKeyInterceptor.shared.stop()
-            return
+        // Built-in controls are the fallback if an external provider quits or
+        // becomes unavailable while OSD replacement remains enabled.
+        if !isBrightnessManagerObserving {
+            BrightnessManager.shared.startObserving()
+            isBrightnessManagerObserving = true
+        }
+        if !isVolumeManagerObserving {
+            VolumeManager.shared.startObserving()
+            isVolumeManagerObserving = true
         }
 
         let brightness = Defaults[.osdBrightnessSource]
         let volume = Defaults[.osdVolumeSource]
+        let sourcesChanged =
+            brightness != lastOSDBrightnessSource || volume != lastOSDVolumeSource
+        lastOSDBrightnessSource = brightness
+        lastOSDVolumeSource = volume
 
-        Task { @MainActor in
-            await MediaKeyInterceptor.shared.start(promptIfNeeded: false)
-        }
-        // BetterDisplay is used when either brightness or volume is set to it
-        if brightness == .betterDisplay || volume == .betterDisplay {
-            BetterDisplayManager.shared.startObserving()
-        } else {
+        let needsBetterDisplay = brightness == .betterDisplay || volume == .betterDisplay
+        if needsBetterDisplay {
+            if !isBetterDisplayObserving {
+                BetterDisplayManager.shared.startObserving()
+                isBetterDisplayObserving = true
+            }
+        } else if isBetterDisplayObserving {
             BetterDisplayManager.shared.stopObserving()
+            isBetterDisplayObserving = false
         }
 
-        // Lunar only supports brightness; disable Lunar's OSD when we replace it, restore when we don't
         if brightness == .lunar {
-            LunarManager.shared.configureLunarOSD(hide: true)
-            LunarManager.shared.startListening()
+            if !isLunarOSDHidden {
+                LunarManager.shared.configureLunarOSD(hide: true)
+                isLunarOSDHidden = true
+            }
+            if !isLunarListening {
+                LunarManager.shared.startListening()
+                isLunarListening = true
+            }
         } else {
-            LunarManager.shared.stopListening()
-            LunarManager.shared.configureLunarOSD(hide: false)
+            if isLunarListening {
+                LunarManager.shared.stopListening()
+                isLunarListening = false
+            }
+            if isLunarOSDHidden {
+                LunarManager.shared.configureLunarOSD(hide: false)
+                isLunarOSDHidden = false
+            }
         }
+
+        // Do not redo the async accessibility check for unrelated setting changes.
+        if !isMediaKeyInterceptorRequested || sourcesChanged {
+            osdEnableTask?.cancel()
+            osdLifecycleGeneration &+= 1
+            let generation = osdLifecycleGeneration
+            isMediaKeyInterceptorRequested = true
+            osdEnableTask = Task { @MainActor [weak self] in
+                await MediaKeyInterceptor.shared.start(promptIfNeeded: false)
+                guard let self, self.osdLifecycleGeneration == generation else { return }
+                self.osdEnableTask = nil
+            }
+        }
+    }
+
+    /// Idempotent teardown for disabling replacement, removing notch windows,
+    /// or terminating the app. Never constructs a manager just to stop it.
+    @MainActor
+    func stopOSDIntegrations() {
+        osdLifecycleGeneration &+= 1
+        osdEnableTask?.cancel()
+        osdEnableTask = nil
+        stopMediaKeyInterception()
+
+        if isBrightnessManagerObserving {
+            BrightnessManager.shared.stopObserving()
+            isBrightnessManagerObserving = false
+        }
+        if isVolumeManagerObserving {
+            VolumeManager.shared.stopObserving()
+            isVolumeManagerObserving = false
+        }
+        if isBetterDisplayObserving {
+            BetterDisplayManager.shared.stopObserving()
+            isBetterDisplayObserving = false
+        }
+        if isLunarListening {
+            LunarManager.shared.stopListening()
+            isLunarListening = false
+        }
+        if isLunarOSDHidden {
+            LunarManager.shared.configureLunarOSD(hide: false)
+            isLunarOSDHidden = false
+        }
+
+        lastOSDBrightnessSource = nil
+        lastOSDVolumeSource = nil
+    }
+
+    @MainActor
+    private func stopMediaKeyInterception() {
+        guard isMediaKeyInterceptorRequested || osdEnableTask != nil else { return }
+        isMediaKeyInterceptorRequested = false
+        MediaKeyInterceptor.shared.stop()
     }
 
     func shouldShowSneakPeek(on screenUUID: String?) -> Bool {
