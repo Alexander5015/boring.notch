@@ -20,6 +20,10 @@ final class BrightnessManager: ObservableObject {
 	/// (adjust + read + display lookup), and they would queue behind each other.
 	private var pendingDelta: Float = 0
 	private var flushTask: Task<Void, Never>?
+	private var pendingAbsoluteValue: Float?
+	private var absoluteFlushTask: Task<Void, Never>?
+	private var lifecycleGeneration: UInt64 = 0
+	private let absoluteWriteInterval: Duration = .milliseconds(66)
 
 	/// The brightness target display only changes with the display set.
 	private var cachedTargetUUID: String?
@@ -28,6 +32,7 @@ final class BrightnessManager: ObservableObject {
 	private init() {}
 
 	func startObserving() {
+		lifecycleGeneration &+= 1
 		if screenParametersObserver == nil {
 			screenParametersObserver = NotificationCenter.default.addObserver(
 				forName: NSApplication.didChangeScreenParametersNotification,
@@ -41,14 +46,18 @@ final class BrightnessManager: ObservableObject {
 	}
 
 	func stopObserving() {
+		lifecycleGeneration &+= 1
 		if let screenParametersObserver {
 			NotificationCenter.default.removeObserver(screenParametersObserver)
 			self.screenParametersObserver = nil
 		}
 		cachedTargetUUID = nil
 		pendingDelta = 0
+		pendingAbsoluteValue = nil
 		flushTask?.cancel()
 		flushTask = nil
+		absoluteFlushTask?.cancel()
+		absoluteFlushTask = nil
 	}
 
 	/// Determine which screen UUID should be used for brightness OSDs
@@ -70,45 +79,84 @@ final class BrightnessManager: ObservableObject {
 	var shouldShowOverlay: Bool { Date().timeIntervalSince(lastChangeAt) < visibleDuration }
 
 	func refresh() {
-		Task { @MainActor in
-			if let current = await client.currentScreenBrightness() {
-				publish(brightness: current, touchDate: false)
-			}
+		let generation = lifecycleGeneration
+		Task { @MainActor [weak self] in
+			guard let self,
+			      let current = await self.client.currentScreenBrightness(),
+			      !Task.isCancelled,
+			      self.lifecycleGeneration == generation
+			else { return }
+			self.publish(brightness: current, touchDate: false)
 		}
 	}
 
 	@MainActor func setRelative(delta: Float) {
 		pendingDelta += delta
 		guard flushTask == nil else { return }
+		let generation = lifecycleGeneration
 		flushTask = Task { @MainActor in
-			defer { flushTask = nil }
+			defer {
+				if lifecycleGeneration == generation {
+					flushTask = nil
+				}
+			}
 			while pendingDelta != 0 {
+				guard !Task.isCancelled, lifecycleGeneration == generation else { return }
 				let delta = pendingDelta
 				pendingDelta = 0
 				// One RPC delivers both the adjustment and the resulting value.
 				guard let current = await client.adjustScreenBrightness(by: delta) else {
+					guard !Task.isCancelled, lifecycleGeneration == generation else { return }
 					refresh()
 					return
 				}
+				guard !Task.isCancelled, lifecycleGeneration == generation else { return }
 				publish(brightness: current, touchDate: true)
 
 				let uuid = await brightnessTargetUUID()
+				guard !Task.isCancelled, lifecycleGeneration == generation else { return }
 				NotchUIEventBus.events.send(.sneakPeek(type: .brightness, value: CGFloat(current), targetScreenUUID: uuid))
 			}
 		}
 	}
 
+	@MainActor
 	func setAbsolute(value: Float) {
-		let clamped = max(0, min(1, value))
-		Task { @MainActor in
-			let ok = await client.setScreenBrightness(clamped)
-			if ok {
-				publish(brightness: clamped, touchDate: true)
-                // optionally show peek when user uses slider/controls
-                let targetUUID = await brightnessTargetUUID()
-                NotchUIEventBus.events.send(.sneakPeek(type: .brightness, value: CGFloat(clamped), targetScreenUUID: targetUUID))
-			} else {
-				refresh()
+		pendingAbsoluteValue = max(0, min(1, value))
+		guard absoluteFlushTask == nil else { return }
+
+		let generation = lifecycleGeneration
+		absoluteFlushTask = Task { @MainActor in
+			defer {
+				if lifecycleGeneration == generation {
+					absoluteFlushTask = nil
+				}
+			}
+
+			while let target = pendingAbsoluteValue {
+				guard !Task.isCancelled, lifecycleGeneration == generation else { return }
+				pendingAbsoluteValue = nil
+				let ok = await client.setScreenBrightness(target)
+				guard !Task.isCancelled, lifecycleGeneration == generation else { return }
+
+				guard ok else {
+					refresh()
+					return
+				}
+
+				publish(brightness: target, touchDate: true)
+				let targetUUID = await brightnessTargetUUID()
+				guard !Task.isCancelled, lifecycleGeneration == generation else { return }
+				NotchUIEventBus.events.send(
+					.sneakPeek(type: .brightness, value: CGFloat(target), targetScreenUUID: targetUUID)
+				)
+
+				// Slider input can arrive at display-refresh frequency. Apply the
+				// latest pending value at roughly 15 Hz instead of issuing one XPC
+				// write for every drag callback.
+				if pendingAbsoluteValue != nil {
+					try? await Task.sleep(for: absoluteWriteInterval)
+				}
 			}
 		}
 	}
