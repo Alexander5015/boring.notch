@@ -17,6 +17,26 @@ struct QuickShareProvider: Identifiable, Hashable, Sendable {
 
     var id: String
     var supportsRawText: Bool
+
+    /// AirDrop remains the preferred default; the UI resolves this against
+    /// providers discovered when Quick Share is actually used.
+    static var defaultProvider: QuickShareProvider {
+        QuickShareProvider(id: airDropId, supportsRawText: false)
+    }
+
+    static func preferredProvider(from providers: [QuickShareProvider]) -> QuickShareProvider {
+        providers.first(where: { $0.id == airDropId })
+            ?? providers.first
+            ?? .systemShareMenu
+    }
+
+    static func resolve(selectedID: String, from providers: [QuickShareProvider]) -> QuickShareProvider {
+        if let selected = providers.first(where: { $0.id == selectedID }) {
+            return selected
+        }
+        guard selectedID == defaultProvider.id else { return .systemShareMenu }
+        return preferredProvider(from: providers)
+    }
 }
 
 private actor ApplicationIconIndex {
@@ -96,24 +116,111 @@ private actor ApplicationIconIndex {
     }
 }
 
-final class QuickShareService: ObservableObject {
-    static let shared = QuickShareService()
+/// Keeps sandbox access alive until the corresponding sharing lifecycle ends,
+/// even if the Shelf view (and its QuickShareService) is removed meanwhile.
+private final class SecurityScopedResourceLease {
+    private let lock = NSLock()
+    private var urls: [URL]
+    private var isReleased = false
 
+    init(urls: [URL]) {
+        self.urls = urls.filter { $0.startAccessingSecurityScopedResource() }
+    }
+
+    func release() {
+        lock.lock()
+        guard !isReleased else {
+            lock.unlock()
+            return
+        }
+        isReleased = true
+        let urlsToRelease = urls
+        urls.removeAll(keepingCapacity: false)
+        lock.unlock()
+
+        for url in urlsToRelease {
+            url.stopAccessingSecurityScopedResource()
+        }
+    }
+
+    deinit {
+        release()
+    }
+}
+
+final class QuickShareService: ObservableObject {
     @Published var availableProviders: [QuickShareProvider] = []
     @Published var isPickerOpen = false
+
     private var cachedApplicationURLsByName: [String: URL]?
     private var cachedServices: [String: NSSharingService] = [:]
     private var cachedIcons: [String: NSImage] = [:]
-    private let applicationIconIndex = ApplicationIconIndex()
+    private var applicationIconIndex = ApplicationIconIndex()
     private var isApplicationIconCacheLoading = false
-    // Hold security-scoped URLs during sharing
-    private var sharingAccessingURLs: [URL] = []
-    private var lifecycleDelegate: SharingLifecycleDelegate?
+    private var providerDiscoveryTask: Task<Void, Never>?
+    private var iconCacheTask: Task<Void, Never>?
+    private var isActive = false
+    private var activeDropOperations = 0
+    private var activeShareDelegates: [UUID: SharingLifecycleDelegate] = [:]
+    private var activeShareLeases: [UUID: SecurityScopedResourceLease] = [:]
 
-    init() {
-        Task {
-            await discoverAvailableProviders()
+    init() {}
+
+    deinit {
+        providerDiscoveryTask?.cancel()
+        iconCacheTask?.cancel()
+    }
+
+    @MainActor
+    func activate() {
+        guard !isActive else { return }
+        isActive = true
+        startProviderDiscoveryIfNeeded()
+    }
+
+    @MainActor
+    func deactivate() {
+        isActive = false
+        providerDiscoveryTask?.cancel()
+        iconCacheTask?.cancel()
+        iconCacheTask = nil
+        isApplicationIconCacheLoading = false
+        releaseCachedResourcesIfIdle()
+    }
+
+    @MainActor
+    private func startProviderDiscoveryIfNeeded() {
+        guard isActive, availableProviders.isEmpty, providerDiscoveryTask == nil else { return }
+
+        providerDiscoveryTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.discoverAvailableProviders()
+            self.providerDiscoveryTask = nil
+
+            if self.isActive, self.availableProviders.isEmpty {
+                self.startProviderDiscoveryIfNeeded()
+            } else if !self.isActive {
+                self.releaseCachedResourcesIfIdle()
+            }
         }
+    }
+
+    @MainActor
+    private func releaseCachedResourcesIfIdle() {
+        guard !isActive,
+              !isPickerOpen,
+              activeDropOperations == 0,
+              activeShareDelegates.isEmpty,
+              providerDiscoveryTask == nil
+        else {
+            return
+        }
+
+        cachedApplicationURLsByName = nil
+        cachedServices.removeAll(keepingCapacity: false)
+        cachedIcons.removeAll(keepingCapacity: false)
+        availableProviders.removeAll(keepingCapacity: false)
+        applicationIconIndex = ApplicationIconIndex()
     }
 
     // MARK: - Icon Retrieval
@@ -153,12 +260,16 @@ final class QuickShareService: ObservableObject {
 
     @MainActor
     private func warmApplicationIconCacheIfNeeded() {
-        guard cachedApplicationURLsByName == nil, !isApplicationIconCacheLoading else { return }
+        guard isActive, cachedApplicationURLsByName == nil, !isApplicationIconCacheLoading else { return }
         isApplicationIconCacheLoading = true
 
-        Task(priority: .utility) { @MainActor in
-            cachedApplicationURLsByName = await applicationIconIndex.urlsByName()
-            isApplicationIconCacheLoading = false
+        let index = applicationIconIndex
+        iconCacheTask = Task(priority: .utility) { @MainActor [weak self, index] in
+            let urlsByName = await index.urlsByName()
+            guard !Task.isCancelled, let self, self.isActive else { return }
+            self.cachedApplicationURLsByName = urlsByName
+            self.isApplicationIconCacheLoading = false
+            self.iconCacheTask = nil
         }
     }
 
@@ -184,6 +295,7 @@ final class QuickShareService: ObservableObject {
         ]
 
         let services = await finder.findApplicableServices(for: testItems)
+        guard isActive, !Task.isCancelled else { return }
 
         var providers: [QuickShareProvider] = []
 
@@ -207,12 +319,12 @@ final class QuickShareService: ObservableObject {
         }
 
         availableProviders = providers
-        warmApplicationIconCacheIfNeeded()
     }
 
     // MARK: - File Picker
     @MainActor
     func showFilePicker(for provider: QuickShareProvider, from view: NSView?) async {
+        guard isActive else { return }
         guard !isPickerOpen else {
             Log.shelf.error("⚠️ QuickShareService: File picker already open")
             return
@@ -228,66 +340,82 @@ final class QuickShareService: ObservableObject {
         panel.title = "Select Files for \(provider.id)"
         panel.message = "Choose files to share via \(provider.id)"
 
-        let completion: (NSApplication.ModalResponse) -> Void = { [weak self] response in
-            defer {
-                self?.isPickerOpen = false
-                SharingStateManager.shared.endInteraction()
-            }
+        let response = panel.runModal()
+        isPickerOpen = false
 
-            if response == .OK && !panel.urls.isEmpty {
-                Task {
-                    await self?.shareFilesOrText(panel.urls, using: provider, from: view)
-                }
-            }
+        // Start the share before ending the picker interaction, avoiding a gap
+        // in which the notch could close and tear down the source view.
+        if response == .OK && !panel.urls.isEmpty {
+            await shareFilesOrText(panel.urls, using: provider, from: view)
         }
 
-        let response = panel.runModal()
-        completion(response)
+        SharingStateManager.shared.endInteraction()
+        releaseCachedResourcesIfIdle()
     }
 
     // MARK: - Sharing
     @MainActor
-    func shareFilesOrText(_ items: [Any], using provider: QuickShareProvider, from view: NSView?) async {
+    func shareFilesOrText(
+        _ items: [Any],
+        using provider: QuickShareProvider,
+        from view: NSView?,
+        onCompletion: (@MainActor () -> Void)? = nil
+    ) async {
         let fileURLs = items.compactMap { $0 as? URL }.filter { $0.isFileURL }
-        // Stop any previous sharing access
-        stopSharingAccessingURLs()
-        // Start security-scoped access for all file URLs
-        sharingAccessingURLs = fileURLs.filter { $0.startAccessingSecurityScopedResource() }
+        let service = cachedServices[provider.id].flatMap { $0.canPerform(withItems: items) ? $0 : nil }
 
-        // Setup lifecycle delegate to keep notch open during picker/service
-        let delegate = SharingStateManager.shared.makeDelegate { [weak self] in
-            self?.lifecycleDelegate = nil
-            self?.stopSharingAccessingURLs()
+        // Without a direct provider or an anchor view, there is nowhere to show
+        // the system picker. Do not start security-scoped access in that case.
+        guard service != nil || view != nil else {
+            onCompletion?()
+            return
         }
-        lifecycleDelegate = delegate
 
-        if let svc = cachedServices[provider.id], svc.canPerform(withItems: items) {
-            // For direct service path, explicitly mark service interaction start
+        let shareID = UUID()
+        let lease = SecurityScopedResourceLease(urls: fileURLs)
+        let delegate = SharingStateManager.shared.makeDelegate { [weak self, lease, service, onCompletion] in
+            // Release sandbox access only when the system reports the share ended.
+            lease.release()
+            service?.delegate = nil
+            Task { @MainActor [weak self, onCompletion] in
+                onCompletion?()
+                self?.finishSharing(id: shareID)
+            }
+        }
+
+        activeShareLeases[shareID] = lease
+        activeShareDelegates[shareID] = delegate
+
+        if let service {
             delegate.markServiceBegan()
-            svc.delegate = delegate
-            svc.perform(withItems: items)
-        } else {
+            service.delegate = delegate
+            service.perform(withItems: items)
+        } else if let view {
             let picker = NSSharingServicePicker(items: items)
             picker.delegate = delegate
             delegate.markPickerBegan()
-            if let view {
-                picker.show(relativeTo: .zero, of: view, preferredEdge: .minY)
-            }
+            picker.show(relativeTo: .zero, of: view, preferredEdge: .minY)
         }
     }
 
-    private func stopSharingAccessingURLs() {
-        NSLog("Stopping sharing access to URLs")
-        for url in sharingAccessingURLs {
-            url.stopAccessingSecurityScopedResource()
-        }
-        sharingAccessingURLs.removeAll()
+    @MainActor
+    private func finishSharing(id: UUID) {
+        activeShareLeases.removeValue(forKey: id)?.release()
+        activeShareDelegates.removeValue(forKey: id)
+        releaseCachedResourcesIfIdle()
     }
 // MARK: - SharingServiceDelegate
 
 private class SharingServiceDelegate: NSObject {}
 
+    @MainActor
     func shareDroppedFiles(_ providers: [NSItemProvider], using shareProvider: QuickShareProvider, from view: NSView?) async {
+        activeDropOperations += 1
+        defer {
+            activeDropOperations -= 1
+            releaseCachedResourcesIfIdle()
+        }
+
         var itemsToShare: [Any] = []
         var foundText: String?
 
@@ -308,8 +436,14 @@ private class SharingServiceDelegate: NSObject {}
                 await shareFilesOrText([text], using: shareProvider, from: view)
             } else {
                 if let tempTextURL = await TemporaryFileStorageService.shared.createTempFile(for: .text(text)) {
-                    await shareFilesOrText([tempTextURL], using: shareProvider, from: view)
-                    TemporaryFileStorageService.shared.removeTemporaryFileIfNeeded(at: tempTextURL)
+                    await shareFilesOrText(
+                        [tempTextURL],
+                        using: shareProvider,
+                        from: view,
+                        onCompletion: {
+                            TemporaryFileStorageService.shared.removeTemporaryFileIfNeeded(at: tempTextURL)
+                        }
+                    )
                 } else {
                     await shareFilesOrText([text], using: shareProvider, from: view)
                 }
@@ -334,15 +468,3 @@ private class SharingServiceDelegate: NSObject {}
     }
 }
 
-// MARK: - App Storage Extension for Provider Selection
-
-extension QuickShareProvider {
-    static var defaultProvider: QuickShareProvider {
-        let svc = QuickShareService.shared
-
-        if let airdrop = svc.availableProviders.first(where: { $0.id == QuickShareProvider.airDropId }) {
-            return airdrop
-        }
-        return svc.availableProviders.first ?? .systemShareMenu
-    }
-}

@@ -12,7 +12,7 @@ import UniformTypeIdentifiers
 
 struct FileShareView: View {
     let dropInteraction: DropInteractionState
-    @StateObject private var quickShare = QuickShareService.shared
+    @StateObject private var quickShare = QuickShareService()
     @Default(.quickShareProvider) var quickShareProvider: String
 
     @State private var hostView: NSView?
@@ -20,7 +20,7 @@ struct FileShareView: View {
     @State private var isProcessing = false
 
     private var selectedProvider: QuickShareProvider {
-        quickShare.availableProviders.first(where: { $0.id == quickShareProvider }) ?? .systemShareMenu
+        QuickShareProvider.resolve(selectedID: quickShareProvider, from: quickShare.availableProviders)
     }
 
     var body: some View {
@@ -38,6 +38,12 @@ struct FileShareView: View {
                 Task {
                     await handleClick()
                 }
+            }
+            .onAppear {
+                quickShare.activate()
+            }
+            .onDisappear {
+                quickShare.deactivate()
             }
     }
 

@@ -12,10 +12,25 @@ struct ShelfSettingsView: View {
     @Default(.shelfTapToOpen) var shelfTapToOpen: Bool
     @Default(.quickShareProvider) var quickShareProvider
     @Default(.expandedDragDetection) var expandedDragDetection: Bool
-    @StateObject private var quickShareService = QuickShareService.shared
+    @StateObject private var quickShareService = QuickShareService()
 
     private var selectedProvider: QuickShareProvider? {
-        quickShareService.availableProviders.first(where: { $0.id == quickShareProvider })
+        if let selected = quickShareService.availableProviders.first(where: { $0.id == quickShareProvider }) {
+            return selected
+        }
+        guard quickShareProvider == QuickShareProvider.defaultProvider.id,
+              !quickShareService.availableProviders.isEmpty
+        else {
+            return nil
+        }
+        return QuickShareProvider.preferredProvider(from: quickShareService.availableProviders)
+    }
+
+    private var providerSelection: Binding<String> {
+        Binding(
+            get: { selectedProvider?.id ?? quickShareProvider },
+            set: { quickShareProvider = $0 }
+        )
     }
 
     var body: some View {
@@ -50,7 +65,7 @@ struct ShelfSettingsView: View {
             }
 
             Section {
-                Picker("Quick Share Service", selection: $quickShareProvider) {
+                Picker("Quick Share Service", selection: providerSelection) {
                     ForEach(quickShareService.availableProviders, id: \.id) { provider in
                         HStack {
                             Group {
@@ -105,5 +120,11 @@ struct ShelfSettingsView: View {
         }
         .accentColor(.effectiveAccent)
         .navigationTitle("Shelf")
+        .onAppear {
+            quickShareService.activate()
+        }
+        .onDisappear {
+            quickShareService.deactivate()
+        }
     }
 }

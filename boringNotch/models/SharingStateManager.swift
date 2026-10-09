@@ -73,17 +73,13 @@ final class SharingLifecycleDelegate: NSObject, NSSharingServiceDelegate, NSShar
 	private var pickerActive = false
 	private var serviceInProgress = false
 	private var finished = false
-	private var timeoutTask: Task<Void, Never>?
+	private var activeService: NSSharingService?
 
 	init(id: UUID, onEnd: @escaping () -> Void, onBegin: @escaping () -> Void, onFinish: @escaping () -> Void) {
 		self.id = id
 		self.onEnd = onEnd
 		self.onBegin = onBegin
 		self.onFinish = onFinish
-	}
-
-	deinit {
-		timeoutTask?.cancel()
 	}
 
 	func markPickerBegan() {
@@ -96,24 +92,13 @@ final class SharingLifecycleDelegate: NSObject, NSSharingServiceDelegate, NSShar
 		guard !serviceInProgress else { return }
 		serviceInProgress = true
 		onBegin()
-		startTimeoutFallback()
-	}
-
-	private func startTimeoutFallback() {
-		timeoutTask?.cancel()
-		timeoutTask = Task { @MainActor [weak self] in
-			try? await Task.sleep(for: .seconds(2))
-			guard let self = self, !Task.isCancelled else { return }
-			if !self.finished {
-				self.finishIfNeeded()
-			}
-		}
 	}
 
 	private func finishIfNeeded() {
 		guard !finished else { return }
 		finished = true
-		timeoutTask?.cancel()
+		activeService?.delegate = nil
+		activeService = nil
 		onFinish()
 		onEnd()
 	}
@@ -128,9 +113,9 @@ final class SharingLifecycleDelegate: NSObject, NSSharingServiceDelegate, NSShar
 			return
 		}
 
+		activeService = service
 		service?.delegate = self
 		serviceInProgress = true
-		startTimeoutFallback()
 	}
 
 	// MARK: - NSSharingServiceDelegate
@@ -139,14 +124,17 @@ final class SharingLifecycleDelegate: NSObject, NSSharingServiceDelegate, NSShar
 		if !pickerActive && !serviceInProgress {
 			onBegin()
 		}
+		activeService = sharingService
 		serviceInProgress = true
 	}
 
 	func sharingService(_ sharingService: NSSharingService, didShareItems items: [Any]) {
+		activeService = sharingService
 		finishIfNeeded()
 	}
 
 	func sharingService(_ sharingService: NSSharingService, didFailToShareItems items: [Any], error: Error) {
+		activeService = sharingService
 		finishIfNeeded()
 	}
 }
