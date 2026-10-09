@@ -19,8 +19,8 @@ final class ImageService: ImageServiceProtocol {
 
     private init() {
         let config = URLSessionConfiguration.default
-        let cache = URLCache(memoryCapacity: 50 * 1024 * 1024, // 50MB
-                             diskCapacity: 100 * 1024 * 1024, // 100MB
+        let cache = URLCache(memoryCapacity: 8 * 1024 * 1024, // 8 MiB memory budget for artwork responses
+                             diskCapacity: 100 * 1024 * 1024, // 100 MiB
                              diskPath: "artwork_cache")
         config.urlCache = cache
         config.timeoutIntervalForRequest = 15
