@@ -18,9 +18,11 @@ actor ThumbnailService {
     private var pendingRequests: [String: Task<CGImage?, Never>] = [:]
     private let thumbnailGenerator = QLThumbnailGenerator.shared
     private let maxCacheSize = 100
+    private let maxCacheCostBytes = 8 * 1024 * 1024
 
     private init() {
         cache.countLimit = maxCacheSize
+        cache.totalCostLimit = maxCacheCostBytes
     }
 
     func thumbnail(for url: URL, size: CGSize) async -> CGImage? {
@@ -40,7 +42,11 @@ actor ThumbnailService {
             let sendableImage = await generateQuickLookThumbnail(for: url, size: size)
 
             if let validImage = sendableImage {
-                cache.setObject(validImage, forKey: cacheKey)
+                cache.setObject(
+                    validImage,
+                    forKey: cacheKey,
+                    cost: validImage.bytesPerRow * validImage.height
+                )
             }
 
             pendingRequests[stringKey] = nil
