@@ -321,14 +321,16 @@ final class BoringViewCoordinator: ObservableObject {
         }
 
         if brightness == .lunar {
-            if !isLunarOSDHidden {
-                LunarManager.shared.configureLunarOSD(hide: true)
-                isLunarOSDHidden = true
-            }
+            let lunar = LunarManager.shared
+            // Calling this repeatedly is cheap: the manager suppresses duplicate
+            // requests and can retry if the helper rejected the previous update.
+            lunar.configureLunarOSD(hide: true)
+            isLunarOSDHidden = true
+
             // The helper can stop its stream independently. Reconcile with
-            // the manager's actual state rather than trusting a stale request flag.
-            if !LunarManager.shared.isListening {
-                LunarManager.shared.startListening()
+            // actual state rather than trusting a stale request flag.
+            if !lunar.isListening {
+                lunar.startListening()
             }
             isLunarListening = true
         } else {
