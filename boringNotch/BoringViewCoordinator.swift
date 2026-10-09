@@ -322,10 +322,12 @@ final class BoringViewCoordinator: ObservableObject {
                 LunarManager.shared.configureLunarOSD(hide: true)
                 isLunarOSDHidden = true
             }
-            if !isLunarListening {
+            // The helper can stop its stream independently. Reconcile with
+            // the manager's actual state rather than trusting a stale request flag.
+            if !LunarManager.shared.isListening {
                 LunarManager.shared.startListening()
-                isLunarListening = true
             }
+            isLunarListening = true
         } else {
             if isLunarListening {
                 LunarManager.shared.stopListening()
