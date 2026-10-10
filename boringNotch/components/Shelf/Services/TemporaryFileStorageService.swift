@@ -20,6 +20,39 @@ final class TemporaryFileStorageService {
 
     // MARK: - Public Interface
 
+    /// Preserves a provider-owned file representation after its completion callback returns.
+    /// The caller is responsible for removing the returned temporary file when no longer needed.
+    static func createTemporaryCopy(of sourceURL: URL, suggestedName: String? = nil) -> URL? {
+        let fileManager = FileManager.default
+        guard sourceURL.isFileURL, fileManager.fileExists(atPath: sourceURL.path) else {
+            Log.shelf.error("Cannot preserve invalid dropped file: \(sourceURL.path)")
+            return nil
+        }
+
+        let temporaryRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        let directoryURL = temporaryRoot.appendingPathComponent(
+            "boringNotchDrop-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        let candidateName = suggestedName.map { URL(fileURLWithPath: $0).lastPathComponent }
+        let fileName = (candidateName?.isEmpty == false ? candidateName : nil)
+            ?? (sourceURL.lastPathComponent.isEmpty ? "DroppedFile" : sourceURL.lastPathComponent)
+        let destinationURL = directoryURL.appendingPathComponent(fileName)
+
+        do {
+            try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+            try fileManager.copyItem(at: sourceURL, to: destinationURL)
+            guard fileManager.fileExists(atPath: destinationURL.path) else {
+                throw CocoaError(.fileReadNoSuchFile)
+            }
+            return destinationURL
+        } catch {
+            try? fileManager.removeItem(at: directoryURL)
+            Log.shelf.error("Failed to preserve dropped file \(sourceURL.path): \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     /// Creates a temporary file and tracks it for manual cleanup
     func createTempFile(for type: TempFileType) async -> URL? {
         return await withCheckedContinuation { continuation in

@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 import Defaults
 
 struct ShelfView: View {
@@ -28,7 +29,7 @@ struct ShelfView: View {
                 FileShareView(dropInteraction: dropInteraction)
                     .aspectRatio(1, contentMode: .fit)
                 panel(quickLookService: quickLookService)
-                    .onDrop(of: [.fileURL, .url, .utf8PlainText, .plainText, .data], isTargeted: $interaction.dragDetectorTargeting) { providers in
+                    .onDrop(of: UTType.boringNotchShelfDropTypes, isTargeted: $interaction.dragDetectorTargeting) { providers in
                         handleDrop(providers: providers)
                     }
             }
@@ -93,7 +94,7 @@ struct ShelfView: View {
                 }
                 .padding(-spacing)
                 .scrollIndicators(.never)
-                .onDrop(of: [.fileURL, .url, .utf8PlainText, .plainText, .data], isTargeted: $interaction.dragDetectorTargeting) { providers in
+                .onDrop(of: UTType.boringNotchShelfDropTypes, isTargeted: $interaction.dragDetectorTargeting) { providers in
                     handleDrop(providers: providers)
                 }
             }

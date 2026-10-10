@@ -67,12 +67,21 @@ final class ShelfStateViewModel: ObservableObject {
         guard !providers.isEmpty else { return }
         isLoading = true
         Task { [weak self] in
-            let dropped = await ShelfDropService.items(from: providers)
-            await MainActor.run {
-                self?.add(dropped)
-                self?.isLoading = false
-            }
+            guard let self else { return }
+            await self.processDrop(providers)
         }
+    }
+
+    /// Loads and adds a drop, returning only after the actor-isolated shelf has been updated.
+    @discardableResult
+    func processDrop(_ providers: [NSItemProvider]) async -> [ShelfItem] {
+        guard !providers.isEmpty else { return [] }
+        isLoading = true
+        defer { isLoading = false }
+
+        let dropped = await ShelfDropService.items(from: providers)
+        add(dropped)
+        return dropped
     }
 
     func cleanupInvalidItems() {

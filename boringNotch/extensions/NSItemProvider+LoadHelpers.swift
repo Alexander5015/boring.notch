@@ -9,17 +9,89 @@ import AppKit
 import Foundation
 import UniformTypeIdentifiers
 
+extension UTType {
+    /// Types accepted by the shelf, including AppKit's documented file-promise types.
+    static var boringNotchShelfDropTypes: [UTType] {
+        var types: [UTType] = [.fileURL, .url, .utf8PlainText, .plainText, .data, .image]
+        for identifier in NSFilePromiseReceiver.readableDraggedTypes {
+            guard let type = UTType(identifier), !types.contains(type) else { continue }
+            types.append(type)
+        }
+        return types
+    }
+}
+
+enum PromisedFileRepresentation {
+    case notAvailable
+    case delivered(URL)
+}
+
 extension NSItemProvider {
     func extractItem() async -> URL? {
         return await loadFileURL(typeIdentifier: UTType.item.identifier)
     }
 
-    /// Detects if this is a file dragged from the filesystem
+    /// Detects if this provider supplies a regular file URL.
     func extractFileURL() async -> URL? {
+        guard hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) else { return nil }
+        return await loadFileURL(typeIdentifier: UTType.fileURL.identifier)
+    }
+
+    /// Loads an asynchronously supplied file representation.
+    ///
+    /// NSItemProvider owns the representation URL and may remove it when its callback
+    /// returns. Copy it to app-owned storage before resuming the continuation.
+    func extractPromisedFileURL() async -> PromisedFileRepresentation {
+        let identifiers = registeredTypeIdentifiers
+        let promiseTypes = Set(NSFilePromiseReceiver.readableDraggedTypes)
+        let hasPromiseType = identifiers.contains { promiseTypes.contains($0) }
+
+        let representationType: UTType?
         if hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-            return await loadFileURL(typeIdentifier: UTType.fileURL.identifier)
+            // A provider can expose a file URL that is not ready yet. Ask for file contents.
+            representationType = .item
+        } else {
+            representationType = identifiers
+                .compactMap { UTType($0) }
+                .first { type in
+                    let isFileContent = type.conforms(to: .content) || type.conforms(to: .directory)
+                    let isGenericType = type == .data || type == .item || type == .url || type == .fileURL
+                    let isText = type.conforms(to: .text)
+                    return isFileContent && !isGenericType && (hasPromiseType || !isText)
+                }
         }
-        return nil
+
+        guard let representationType else { return .notAvailable }
+        let suggestedName = self.suggestedName
+
+        return await withCheckedContinuation { continuation in
+            _ = loadFileRepresentation(for: representationType, openInPlace: false) { url, _, error in
+                guard error == nil else {
+                    Log.general.error(
+                        "Failed to load promised file representation for \(representationType.identifier): \(error!.localizedDescription)"
+                    )
+                    continuation.resume(returning: .notAvailable)
+                    return
+                }
+
+                guard let url, url.isFileURL, FileManager.default.fileExists(atPath: url.path) else {
+                    Log.general.error(
+                        "Promised file representation for \(representationType.identifier) returned no valid file."
+                    )
+                    continuation.resume(returning: .notAvailable)
+                    return
+                }
+
+                guard let preservedURL = TemporaryFileStorageService.createTemporaryCopy(
+                    of: url,
+                    suggestedName: suggestedName
+                ) else {
+                    continuation.resume(returning: .notAvailable)
+                    return
+                }
+                continuation.resume(returning: .delivered(preservedURL))
+            }
+        }
     }
 
     /// Loads raw data for the given type identifier

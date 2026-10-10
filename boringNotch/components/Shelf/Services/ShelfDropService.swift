@@ -11,16 +11,21 @@ import UniformTypeIdentifiers
 
 struct ShelfDropService {
     static func items(from providers: [NSItemProvider]) async -> [ShelfItem] {
-        // Process providers concurrently for better performance with large drops
+        var seenProviders = Set<ObjectIdentifier>()
+        let uniqueProviders = providers.filter {
+            seenProviders.insert(ObjectIdentifier($0)).inserted
+        }
+
+        // Process distinct providers concurrently for better performance with large drops.
         await withTaskGroup(of: ShelfItem?.self) { group in
-            for provider in providers {
+            for provider in uniqueProviders {
                 group.addTask {
                     await processProvider(provider)
                 }
             }
 
             var results: [ShelfItem] = []
-            results.reserveCapacity(providers.count)
+            results.reserveCapacity(uniqueProviders.count)
 
             for await item in group {
                 if let item = item {
@@ -33,11 +38,20 @@ struct ShelfDropService {
     }
 
     private static func processProvider(_ provider: NSItemProvider) async -> ShelfItem? {
-        if let actualFileURL = await provider.extractFileURL() {
-            if let bookmark = createBookmark(for: actualFileURL) {
-                return await ShelfItem(kind: .file(bookmark: bookmark), isTemporary: false)
+        if let actualFileURL = await provider.extractFileURL(),
+           let bookmark = createBookmark(for: actualFileURL) {
+            return await ShelfItem(kind: .file(bookmark: bookmark), isTemporary: false)
+        }
+
+        switch await provider.extractPromisedFileURL() {
+        case .delivered(let promisedURL):
+            guard let bookmark = createBookmark(for: promisedURL) else {
+                TemporaryFileStorageService.shared.removeTemporaryFileIfNeeded(at: promisedURL)
+                return nil
             }
-            return nil
+            return await ShelfItem(kind: .file(bookmark: bookmark), isTemporary: true)
+        case .notAvailable:
+            break
         }
 
         if let url = await provider.extractURL() {
