@@ -118,6 +118,14 @@ struct MediaSettingsView: View {
                 Defaults.Toggle(key: .coloredSpectrogram) {
                     Text("Colored spectrogram")
                 }
+                Defaults.Toggle(key: .staticSpectrogram) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Static spectrogram")
+                        Text("Show a fixed frequency pattern instead of animated bars.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 Defaults.Toggle(key: .realtimeAudioWaveform) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Real-time audio waveform")

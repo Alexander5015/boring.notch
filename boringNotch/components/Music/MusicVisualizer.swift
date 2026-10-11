@@ -13,6 +13,7 @@ class MusicVisualizerModel: NSView, AudioCaptureLevelsConsumer {
     private var barLayers: [CAGradientLayer] = []
     private var isPlaying = false
     private var useRealtime = false
+    private var useStatic = false
     private var tintColor: NSColor = .systemBlue
     private var lastTintColor: NSColor?
 
@@ -137,7 +138,55 @@ class MusicVisualizerModel: NSView, AudioCaptureLevelsConsumer {
         }
     }
 
+    func setStaticMode(_ enabled: Bool) {
+        guard useStatic != enabled else { return }
+        useStatic = enabled
+        for i in lastAppliedLevels.indices { lastAppliedLevels[i] = -1 }
+
+        if enabled {
+            stopRandomAnimating()
+            applyStaticLevels()
+        } else if isPlaying {
+            if useRealtime {
+                // Force the next capture update through the change threshold guard.
+                syncCurrentLevelsFromAttachedManager()
+            } else {
+                startRandomAnimating()
+            }
+        }
+    }
+
+    private func applyStaticLevels() {
+        // Interpolate a compact, fixed frequency profile across however many
+        // bars the active audio-capture configuration provides.
+        let profile: [CGFloat] = [0.20, 0.35, 0.58, 0.88, 0.72, 0.46, 0.80, 0.56, 0.30]
+        let denominator = CGFloat(max(barLayers.count - 1, 1))
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (index, barLayer) in barLayers.enumerated() {
+            let position = CGFloat(index) / denominator * CGFloat(profile.count - 1)
+            let lowerIndex = Int(position)
+            let upperIndex = min(lowerIndex + 1, profile.count - 1)
+            let fraction = position - CGFloat(lowerIndex)
+            let scale = profile[lowerIndex] * (1 - fraction) + profile[upperIndex] * fraction
+            barLayer.transform = CATransform3DMakeScale(1.0, scale, 1.0)
+        }
+        CATransaction.commit()
+    }
+
+    private func syncCurrentLevelsFromAttachedManager() {
+        guard let manager = attachedManager else { return }
+        syncCurrentLevels(from: manager)
+    }
+
     func setPlaying(_ playing: Bool) {
+        if useStatic {
+            isPlaying = playing
+            applyStaticLevels()
+            return
+        }
+
         guard isPlaying != playing else { return }
         isPlaying = playing
         if playing {
@@ -158,6 +207,8 @@ class MusicVisualizerModel: NSView, AudioCaptureLevelsConsumer {
         guard isPlaying else { return }
         if enabled {
             stopRandomAnimating()
+        } else if useStatic {
+            applyStaticLevels()
         } else {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
@@ -187,7 +238,7 @@ class MusicVisualizerModel: NSView, AudioCaptureLevelsConsumer {
     }
 
     private func applyLevels(_ values: [Float]) {
-        guard isPlaying, useRealtime, values.count == barCount else { return }
+        guard isPlaying, useRealtime, !useStatic, values.count == barCount else { return }
         var maxDelta: Float = 0
         for i in 0..<barCount {
             let d = abs(values[i] - lastAppliedLevels[i])
@@ -224,11 +275,13 @@ struct MusicVisualizer: NSViewRepresentable {
     let isPlaying: Bool
     let tintColor: Color
     @Default(.realtimeAudioWaveform) var realtimeEnabled: Bool
+    @Default(.staticSpectrogram) var staticSpectrogram: Bool
     @ObservedObject private var audioCapture = AudioCaptureManager.shared
 
     func makeNSView(context: Context) -> MusicVisualizerModel {
         let spectrum = MusicVisualizerModel()
         spectrum.setTintColor(NSColor(tintColor))
+        spectrum.setStaticMode(staticSpectrogram)
         spectrum.setUseRealtime(realtimeEnabled && audioCapture.isCapturing)
         spectrum.setPlaying(isPlaying)
         spectrum.attach(to: audioCapture)
@@ -238,6 +291,7 @@ struct MusicVisualizer: NSViewRepresentable {
 
     func updateNSView(_ nsView: MusicVisualizerModel, context: Context) {
         nsView.setTintColor(NSColor(tintColor))
+        nsView.setStaticMode(staticSpectrogram)
         nsView.setUseRealtime(realtimeEnabled && audioCapture.isCapturing)
         nsView.setPlaying(isPlaying)
         nsView.syncCurrentLevels(from: audioCapture)
