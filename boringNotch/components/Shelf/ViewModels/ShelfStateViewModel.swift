@@ -6,6 +6,7 @@
 
 import Foundation
 import AppKit
+import Defaults
 
 @MainActor
 final class ShelfStateViewModel: ObservableObject {
@@ -22,9 +23,25 @@ final class ShelfStateViewModel: ObservableObject {
     // Debounced persistence
     private var persistenceTask: Task<Void, Never>?
     private let persistenceDelay: Duration = .seconds(1)
+    private var retentionCleanupTask: Task<Void, Never>?
 
     private init() {
         items = ShelfPersistenceService.shared.load()
+        // Persist migration defaults for entries created before timestamps/pins existed.
+        schedulePersistence()
+
+        retentionCleanupTask = Task { @MainActor [weak self] in
+            self?.cleanupExpiredItems()
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(60))
+                } catch {
+                    break
+                }
+                guard !Task.isCancelled, let self else { break }
+                self.cleanupExpiredItems()
+            }
+        }
     }
 
     private func schedulePersistence() {
@@ -56,10 +73,45 @@ final class ShelfStateViewModel: ObservableObject {
         items.removeAll { $0.id == item.id }
     }
 
+    func togglePinned(_ item: ShelfItem) {
+        guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
+        let current = items[index]
+        items[index] = ShelfItem(
+            id: current.id,
+            kind: current.kind,
+            isTemporary: current.isTemporary,
+            createdAt: current.createdAt,
+            isPinned: !current.isPinned
+        )
+    }
+
+    /// Removes expired, unpinned entries from the shelf. Original files are only
+    /// unlinked from the shelf; cleanupStoredData deletes only app-owned temporary files.
+    func cleanupExpiredItems() {
+        guard let duration = Defaults[.shelfRetentionPeriod].duration else { return }
+        let cutoff = Date().addingTimeInterval(-duration)
+        let expiredItems = items.filter { !$0.isPinned && $0.createdAt <= cutoff }
+        guard !expiredItems.isEmpty else { return }
+
+        let expiredIDs = Set(expiredItems.map(\.id))
+        for item in expiredItems {
+            item.cleanupStoredData()
+        }
+        items.removeAll { expiredIDs.contains($0.id) }
+        Log.shelf.info("Removed \(expiredItems.count) expired shelf item(s)")
+    }
+
     func updateBookmark(for item: ShelfItem, bookmark: Data) {
         guard let idx = items.firstIndex(where: { $0.id == item.id }) else { return }
         if case .file = items[idx].kind {
-            items[idx] = ShelfItem(id: items[idx].id, kind: .file(bookmark: bookmark), isTemporary: items[idx].isTemporary)
+            let current = items[idx]
+            items[idx] = ShelfItem(
+                id: current.id,
+                kind: .file(bookmark: bookmark),
+                isTemporary: current.isTemporary,
+                createdAt: current.createdAt,
+                isPinned: current.isPinned
+            )
         }
     }
 

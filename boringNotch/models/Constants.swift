@@ -29,6 +29,34 @@ enum HideNotchOption: String, Defaults.Serializable {
     case never
 }
 
+enum ShelfRetentionPeriod: String, CaseIterable, Identifiable, Defaults.Serializable {
+    case never
+    case oneHour
+    case oneDay
+    case sevenDays
+
+    var id: String { rawValue }
+
+    /// The elapsed time after which an unpinned shelf item expires.
+    var duration: TimeInterval? {
+        switch self {
+        case .never: nil
+        case .oneHour: 60 * 60
+        case .oneDay: 24 * 60 * 60
+        case .sevenDays: 7 * 24 * 60 * 60
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .never: String(localized: "Never")
+        case .oneHour: String(localized: "1 hour")
+        case .oneDay: String(localized: "1 day")
+        case .sevenDays: String(localized: "7 days")
+        }
+    }
+}
+
 struct AppLanguage: RawRepresentable, Hashable, Identifiable, Defaults.Serializable {
     static let system = AppLanguage(rawValue: "system")
 
@@ -535,6 +563,7 @@ extension Defaults.Keys {
     static let autoRemoveShelfItems = Key<Bool>("autoRemoveShelfItems", default: false)
     static let expandedDragDetection = Key<Bool>("expandedDragDetection", default: true)
     static let reverseShelfOrdering = Key<Bool>("reverseShelfOrdering", default: false)
+    static let shelfRetentionPeriod = Key<ShelfRetentionPeriod>("shelfRetentionPeriod", default: .never)
 
     // MARK: Calendar
     static let calendarSelectionState = Key<CalendarSelectionState>("calendarSelectionState", default: .all)

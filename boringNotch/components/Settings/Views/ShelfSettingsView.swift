@@ -11,7 +11,8 @@ import SwiftUI
 struct ShelfSettingsView: View {
     @Default(.shelfTapToOpen) var shelfTapToOpen: Bool
     @Default(.quickShareProvider) var quickShareProvider
-    @Default(.expandedDragDetection) var expandedDragDetection: Bool
+    @Default(.expandedDragDetection) var expandedDragDetection
+    @Default(.shelfRetentionPeriod) var shelfRetentionPeriod: ShelfRetentionPeriod: Bool
     @StateObject private var quickShareService = QuickShareService.shared
 
     private var selectedProvider: QuickShareProvider? {
@@ -47,6 +48,23 @@ struct ShelfSettingsView: View {
                 }
             } header: {
                 Text("General")
+            }
+
+            Section {
+                Picker("Remove items after", selection: $shelfRetentionPeriod) {
+                    ForEach(ShelfRetentionPeriod.allCases) { period in
+                        Text(period.title).tag(period)
+                    }
+                }
+                .onChange(of: shelfRetentionPeriod) { _, _ in
+                    ShelfStateViewModel.shared.cleanupExpiredItems()
+                }
+
+                Text("Pinned items never expire. Original files are not deleted when they expire from the shelf.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Smart Retention")
             }
 
             Section {

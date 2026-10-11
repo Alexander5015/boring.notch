@@ -52,10 +52,45 @@ struct ShelfItem: Identifiable, Codable, Equatable {
     let id: UUID
     let kind: ShelfItemKind
     let isTemporary: Bool
-    init(id: UUID = UUID(), kind: ShelfItemKind, isTemporary: Bool = false) {
+    let createdAt: Date
+    let isPinned: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, isTemporary, createdAt, isPinned
+    }
+
+    init(
+        id: UUID = UUID(),
+        kind: ShelfItemKind,
+        isTemporary: Bool = false,
+        createdAt: Date = Date(),
+        isPinned: Bool = false
+    ) {
         self.id = id
         self.kind = kind
         self.isTemporary = isTemporary
+        self.createdAt = createdAt
+        self.isPinned = isPinned
+    }
+
+    // Defaults preserve compatibility with shelf data created by older versions.
+    // Existing entries receive a migration timestamp and are persisted on startup.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        kind = try container.decode(ShelfItemKind.self, forKey: .kind)
+        isTemporary = try container.decodeIfPresent(Bool.self, forKey: .isTemporary) ?? false
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(isTemporary, forKey: .isTemporary)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(isPinned, forKey: .isPinned)
     }
 
     var displayName: String {

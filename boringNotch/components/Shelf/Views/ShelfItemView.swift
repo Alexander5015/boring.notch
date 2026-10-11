@@ -108,6 +108,16 @@ struct ShelfItemView: View {
             .frame(width: 56, height: 56)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .shadow(color: .black.opacity(0.15), radius: 3, x: 0, y: 2)
+            .overlay(alignment: .topTrailing) {
+                if item.isPinned {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(4)
+                        .background(.black.opacity(0.72), in: Circle())
+                        .offset(x: 3, y: -3)
+                }
+            }
     }
 
     private var textView: some View {

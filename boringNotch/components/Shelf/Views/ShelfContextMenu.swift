@@ -31,6 +31,8 @@ struct Strings {
     static let createPDF = String(localized: "Create PDF", comment: "Context menu item: Create PDF")
     static let compress = String(localized: "Compress", comment: "Context menu item: Compress")
     static let rename = String(localized: "Rename", comment: "Context menu item: Rename")
+    static let pin = String(localized: "Pin", comment: "Context menu item: Pin")
+    static let unpin = String(localized: "Unpin", comment: "Context menu item: Unpin")
     static let copy = String(localized: "Copy", comment: "Context menu item: Copy")
     static let copyPath = String(localized: "Copy Path", comment: "Context menu item: Copy Path")
     static let remove = String(localized: "Remove", comment: "Context menu item: Remove")
@@ -41,6 +43,7 @@ enum ContextMenuAction: String {
     case open
     case share
     case rename
+    case togglePin
     case showInFinder
     case copyPath
     case copy
@@ -214,7 +217,12 @@ static func present(
         menu.addItem(compressItem)
     }
 
-    if selectedItems.count == 1, case .file = item.kind { addMenuItem(title: Strings.rename, contextAction: .rename) }
+    if selectedItems.count == 1 {
+        addMenuItem(title: item.isPinned ? Strings.unpin : Strings.pin, contextAction: .togglePin)
+    }
+    if selectedItems.count == 1, case .file = item.kind {
+        addMenuItem(title: Strings.rename, contextAction: .rename)
+    }
 
     // Always show "Copy" for all item types
     addMenuItem(title: Strings.copy, contextAction: .copy)
@@ -378,6 +386,9 @@ private final class MenuActionTarget: NSObject {
         case .rename?:
             let selected = ShelfSelectionModel.shared.selectedItems(in: ShelfStateViewModel.shared.items)
             if selected.count == 1, let single = selected.first { showRenameDialog(for: single) }
+
+        case .togglePin?:
+            ShelfStateViewModel.shared.togglePinned(item)
 
         case .showInFinder?:
             let selected = ShelfSelectionModel.shared.selectedItems(in: ShelfStateViewModel.shared.items)
